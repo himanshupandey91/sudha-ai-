@@ -1,88 +1,48 @@
-"""
-Sudha AI - Prediction Loop
-
-Connects:
-
-Observation
-→ Prediction
-→ Difference
-→ Attention
-→ Learning
-→ Curiosity
-→ World Model
-→ Goal Generation
-→ Planning
-"""
-
-from core.prediction import PredictionEngine
-from core.difference import DifferenceEngine
-from core.attention import AttentionEngine
-from core.learning import LearningEngine
-from core.curiosity import CuriosityEngine
-from core.world_model import WorldModel
-from core.goal import GoalEngine
-from core.planning import PlanningEngine
+from core.prediction_loop import PredictionLoop
 
 
-class PredictionLoop:
+def test_prediction_loop():
 
-    def __init__(self):
-        self.predictor = PredictionEngine()
-        self.difference_engine = DifferenceEngine()
-        self.attention = AttentionEngine()
-        self.learning = LearningEngine()
-        self.curiosity = CuriosityEngine()
-        self.world_model = WorldModel()
-        self.goal = GoalEngine()
-        self.planning = PlanningEngine()
+    system = PredictionLoop()
 
-    def process(self, observation, actual):
-        """
-        Complete prediction cycle.
-        """
+    result = system.process(
+        observation=10,
+        actual=15
+    )
 
-        # 1. Prediction
-        prediction = self.predictor.predict(observation)
+    # Prediction
+    assert result["prediction"] == 10
 
-        # 2. Difference
-        difference = self.difference_engine.calculate(
-            prediction,
-            actual
-        )
+    # Difference
+    assert result["difference"] == 5
 
-        # 3. Attention
-        attention_state = self.attention.focus({
-            "observation": observation,
-            "prediction": prediction,
-            "actual": actual,
-            "difference": difference
-        })
+    # Attention
+    assert result["attention"]["focus"] == "prediction_error"
+    assert result["attention"]["value"] == 5
 
-        # 4. Learning
-        learning_state = self.learning.learn(difference)
+    # Learning
+    assert result["learning"]["error"] == 5
+    assert result["learning"]["learning_signal"] == 5
 
-        # 5. Curiosity
-        curiosity_state = self.curiosity.calculate(difference)
+    # Curiosity
+    assert result["curiosity"]["difference"] == 5
+    assert result["curiosity"]["curiosity"] == 5
 
-        # 6. World Model
-        state = self.world_model.update(
-            observation=observation,
-            prediction=prediction,
-            actual=actual,
-            difference=difference
-        )
+    # World Model
+    assert result["observation"] == 10
+    assert result["prediction"] == 10
+    assert result["actual"] == 15
+    assert result["difference"] == 5
 
-        # 7. Goal Generation
-        goal_state = self.goal.generate(state)
+    # Goal
+    assert result["goal"]["goal"] == "reduce_prediction_error"
+    assert result["goal"]["priority"] == 5
 
-        # 8. Planning
-        planning_state = self.planning.create_plan(goal_state)
+    # Planning
+    assert result["planning"]["goal"] == "reduce_prediction_error"
 
-        # Add higher-level states
-        state["attention"] = attention_state
-        state["learning"] = learning_state
-        state["curiosity"] = curiosity_state
-        state["goal"] = goal_state
-        state["planning"] = planning_state
-
-        return state
+    assert result["planning"]["plan"] == [
+        "observe_new_data",
+        "make_new_prediction",
+        "compare_prediction_with_actual"
+    ]
