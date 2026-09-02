@@ -12,6 +12,7 @@ Observation
 → World Model
 → Goal Generation
 → Planning
+→ Action
 """
 
 from core.prediction import PredictionEngine
@@ -22,6 +23,7 @@ from core.curiosity import CuriosityEngine
 from core.world_model import WorldModel
 from core.goal import GoalEngine
 from core.planning import PlanningEngine
+from core.action import ActionEngine
 
 
 class PredictionLoop:
@@ -35,10 +37,24 @@ class PredictionLoop:
         self.world_model = WorldModel()
         self.goal = GoalEngine()
         self.planning = PlanningEngine()
+        self.action = ActionEngine()
 
     def process(self, observation, actual):
         """
-        Complete prediction cycle.
+        Execute one complete Sudha AI cycle.
+
+        Flow:
+
+        Observation
+        → Prediction
+        → Difference
+        → Attention
+        → Learning
+        → Curiosity
+        → World Model
+        → Goal
+        → Planning
+        → Action
         """
 
         # 1. Prediction
@@ -78,11 +94,29 @@ class PredictionLoop:
         # 8. Planning
         planning_state = self.planning.create_plan(goal_state)
 
+        # 9. Action
+        #
+        # The Action Engine receives the planned actions
+        # and the current internal context.
+        #
+        # No external side effects are allowed here.
+        action_context = {
+            "observation": observation,
+            "prediction": prediction,
+            "actual": actual
+        }
+
+        action_state = self.action.execute_plan(
+            planning_state["plan"],
+            context=action_context
+        )
+
         # Add higher-level states
         state["attention"] = attention_state
         state["learning"] = learning_state
         state["curiosity"] = curiosity_state
         state["goal"] = goal_state
         state["planning"] = planning_state
+        state["action"] = action_state
 
         return state
