@@ -18,3 +18,6 @@ def test_prediction_loop():
 
     assert result["learning"]["error"] == 5
     assert result["learning"]["learning_signal"] == 5
+
+    assert result["curiosity"]["difference"] == 5
+    assert result["curiosity"]["curiosity"] == 5
