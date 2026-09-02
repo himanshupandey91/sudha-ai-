@@ -2,6 +2,7 @@
 Sudha AI - Prediction Loop
 
 Connects:
+
 Observation
 → Prediction
 → Difference
@@ -10,6 +11,7 @@ Observation
 → Curiosity
 → World Model
 → Goal Generation
+→ Planning
 """
 
 from core.prediction import PredictionEngine
@@ -19,6 +21,7 @@ from core.learning import LearningEngine
 from core.curiosity import CuriosityEngine
 from core.world_model import WorldModel
 from core.goal import GoalEngine
+from core.planning import PlanningEngine
 
 
 class PredictionLoop:
@@ -31,19 +34,23 @@ class PredictionLoop:
         self.curiosity = CuriosityEngine()
         self.world_model = WorldModel()
         self.goal = GoalEngine()
+        self.planning = PlanningEngine()
 
     def process(self, observation, actual):
         """
         Complete prediction cycle.
         """
 
+        # 1. Prediction
         prediction = self.predictor.predict(observation)
 
+        # 2. Difference
         difference = self.difference_engine.calculate(
             prediction,
             actual
         )
 
+        # 3. Attention
         attention_state = self.attention.focus({
             "observation": observation,
             "prediction": prediction,
@@ -51,10 +58,13 @@ class PredictionLoop:
             "difference": difference
         })
 
+        # 4. Learning
         learning_state = self.learning.learn(difference)
 
+        # 5. Curiosity
         curiosity_state = self.curiosity.calculate(difference)
 
+        # 6. World Model
         state = self.world_model.update(
             observation=observation,
             prediction=prediction,
@@ -62,11 +72,17 @@ class PredictionLoop:
             difference=difference
         )
 
+        # 7. Goal Generation
         goal_state = self.goal.generate(state)
 
+        # 8. Planning
+        planning_state = self.planning.create_plan(goal_state)
+
+        # Add higher-level states
         state["attention"] = attention_state
         state["learning"] = learning_state
         state["curiosity"] = curiosity_state
         state["goal"] = goal_state
+        state["planning"] = planning_state
 
         return state
