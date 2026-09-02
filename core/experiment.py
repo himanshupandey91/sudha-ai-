@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.3.1
+Version 0.3.2
 
 Controls the continuous experimentation process.
 
@@ -14,12 +14,13 @@ Goal
 → Next Experiment
 → Repeat
 
-Version 0.3.1:
+Version 0.3.2:
 - Interruptible stop control
 - Thread-safe stop signal
 - Maximum experiment safety guard
 - Experiment status tracking
-- Backward-compatible stop() response
+- Complete stop response
+- Asynchronous experimentation support
 
 Safety:
 - Explicit stop control
@@ -28,6 +29,7 @@ Safety:
 - No external side effects
 - Deterministic behavior
 """
+
 
 import threading
 
@@ -219,6 +221,9 @@ class ExperimentManager:
         The currently running experiment is allowed
         to finish. The next loop check stops further
         experimentation.
+
+        Returns a complete stop status so callers
+        can immediately verify the requested state.
         """
 
         self.stop_requested = True
@@ -226,6 +231,8 @@ class ExperimentManager:
 
         return {
             "status": "stopped",
+            "stop_requested": True,
+            "running": self.running,
             "experiment_count": self.experiment_count
         }
 
