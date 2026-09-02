@@ -2,7 +2,14 @@
 Sudha AI - Prediction Loop
 
 Connects:
-Observation → Prediction → Difference → Attention → Learning → Curiosity → World Model
+Observation
+→ Prediction
+→ Difference
+→ Attention
+→ Learning
+→ Curiosity
+→ World Model
+→ Goal Generation
 """
 
 from core.prediction import PredictionEngine
@@ -11,6 +18,7 @@ from core.attention import AttentionEngine
 from core.learning import LearningEngine
 from core.curiosity import CuriosityEngine
 from core.world_model import WorldModel
+from core.goal import GoalEngine
 
 
 class PredictionLoop:
@@ -22,6 +30,7 @@ class PredictionLoop:
         self.learning = LearningEngine()
         self.curiosity = CuriosityEngine()
         self.world_model = WorldModel()
+        self.goal = GoalEngine()
 
     def process(self, observation, actual):
         """
@@ -53,8 +62,11 @@ class PredictionLoop:
             difference=difference
         )
 
+        goal_state = self.goal.generate(state)
+
         state["attention"] = attention_state
         state["learning"] = learning_state
         state["curiosity"] = curiosity_state
+        state["goal"] = goal_state
 
         return state
