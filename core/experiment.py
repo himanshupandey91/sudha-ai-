@@ -1,9 +1,9 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.1
+Version 0.2
 
-Controls the closed-loop experimentation process.
+Controls the continuous experimentation process.
 
 Flow:
 
@@ -11,7 +11,7 @@ Goal
 → Hypothesis
 → Simulation
 → Evaluation
-→ Next Hypothesis
+→ Next Experiment
 → Repeat
 
 Safety:
@@ -25,8 +25,12 @@ Safety:
 
 class ExperimentManager:
 
-    def __init__(self, hypothesis_engine, simulation_engine,
-                 max_experiments=10):
+    def __init__(
+        self,
+        hypothesis_engine,
+        simulation_engine,
+        max_experiments=10
+    ):
         """
         Initialize the Experiment Manager.
 
@@ -50,18 +54,23 @@ class ExperimentManager:
         self.max_experiments = max_experiments
 
         self.running = False
+        self.stop_requested = False
         self.experiment_count = 0
         self.results = []
         self.best_result = None
 
     def start(self, goal_state, state=None):
         """
-        Start a bounded experimentation loop.
+        Start the continuous experimentation loop.
 
         The loop continues until:
-        - a solution is found,
-        - stop() is called,
-        - or max_experiments is reached.
+
+        1. A solution is found.
+        2. stop() is requested.
+        3. max_experiments is reached.
+
+        The same goal can generate another experiment
+        after the available hypotheses have been tested.
         """
 
         if not isinstance(goal_state, dict):
@@ -78,23 +87,38 @@ class ExperimentManager:
             )
 
         self.running = True
+        self.stop_requested = False
         self.experiment_count = 0
         self.results = []
         self.best_result = None
 
-        hypotheses = self.hypothesis_engine.generate(
-            goal_state
-        )
+        while self.running:
 
-        for hypothesis_data in hypotheses:
-
-            if not self.running:
+            if self.stop_requested:
                 break
 
             if self.experiment_count >= self.max_experiments:
                 break
 
-            hypothesis = hypothesis_data["hypothesis"]
+            hypotheses = self.hypothesis_engine.generate(
+                goal_state
+            )
+
+            if not hypotheses:
+                break
+
+            hypothesis_index = (
+                self.experiment_count
+                % len(hypotheses)
+            )
+
+            hypothesis_data = hypotheses[
+                hypothesis_index
+            ]
+
+            hypothesis = hypothesis_data[
+                "hypothesis"
+            ]
 
             result = self.simulation_engine.simulate(
                 hypothesis,
@@ -132,6 +156,7 @@ class ExperimentManager:
         Request the experimentation loop to stop.
         """
 
+        self.stop_requested = True
         self.running = False
 
         return {
@@ -153,6 +178,7 @@ class ExperimentManager:
 
         return {
             "running": self.running,
+            "stop_requested": self.stop_requested,
             "experiment_count": self.experiment_count,
             "results": list(self.results),
             "best_result": self.best_result
@@ -160,8 +186,8 @@ class ExperimentManager:
 
     def _update_best_result(self, experiment_result):
         """
-        Keep the experiment with the lowest predicted
-        prediction error.
+        Keep the experiment with the lowest
+        predicted prediction error.
         """
 
         result = experiment_result["result"]
@@ -180,9 +206,18 @@ class ExperimentManager:
             self.best_result = experiment_result
             return
 
-        current_best = self.best_result["result"].get(
+        current_best = self.best_result[
+            "result"
+        ].get(
             "predicted_difference"
         )
+
+        if not isinstance(
+            current_best,
+            (int, float)
+        ):
+            self.best_result = experiment_result
+            return
 
         if predicted_difference < current_best:
             self.best_result = experiment_result
