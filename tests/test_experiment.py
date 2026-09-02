@@ -4,6 +4,7 @@ from core.experiment import ExperimentManager
 
 
 def create_manager(max_experiments=10):
+
     hypothesis_engine = HypothesisEngine()
     simulation_engine = SimulationEngine()
 
@@ -14,9 +15,11 @@ def create_manager(max_experiments=10):
     )
 
 
-def test_experiment_manager_starts_and_completes():
+def test_experiment_manager_runs_continuously():
 
-    manager = create_manager()
+    manager = create_manager(
+        max_experiments=10
+    )
 
     result = manager.start(
         {
@@ -29,13 +32,46 @@ def test_experiment_manager_starts_and_completes():
     )
 
     assert result["running"] is False
-    assert result["experiment_count"] == 3
-    assert len(result["results"]) == 3
+    assert result["experiment_count"] == 10
+    assert len(result["results"]) == 10
+
+
+def test_experiment_manager_repeats_hypotheses():
+
+    manager = create_manager(
+        max_experiments=5
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    assert result["experiment_count"] == 5
+
+    hypotheses = [
+        item["hypothesis"]
+        for item in result["results"]
+    ]
+
+    assert hypotheses == [
+        "use_recent_experience",
+        "increase_observation_frequency",
+        "change_prediction_strategy",
+        "use_recent_experience",
+        "increase_observation_frequency"
+    ]
 
 
 def test_experiment_manager_records_results():
 
-    manager = create_manager()
+    manager = create_manager(
+        max_experiments=3
+    )
 
     result = manager.start(
         {
@@ -57,7 +93,9 @@ def test_experiment_manager_records_results():
 
 def test_experiment_manager_selects_best_result():
 
-    manager = create_manager()
+    manager = create_manager(
+        max_experiments=3
+    )
 
     result = manager.start(
         {
@@ -102,6 +140,7 @@ def test_experiment_manager_stop():
 
     assert stop_result["status"] == "stopped"
     assert manager.is_running() is False
+    assert manager.stop_requested is True
 
 
 def test_experiment_manager_rejects_invalid_goal():
