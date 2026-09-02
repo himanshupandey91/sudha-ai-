@@ -12,3 +12,6 @@ def test_prediction_loop():
 
     assert result["prediction"] == 10
     assert result["difference"] == 5
+
+    assert result["attention"]["focus"] == "prediction_error"
+    assert result["attention"]["value"] == 5
