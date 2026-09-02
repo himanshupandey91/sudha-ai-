@@ -13,7 +13,8 @@ Important:
 - No external side effects.
 - Actions operate only on supplied internal context.
 
-This version introduces real internal action processing.
+This version remains backward compatible with
+the Version 0.1 action interface.
 """
 
 
@@ -35,12 +36,11 @@ class ActionEngine:
         """
         Validate and execute an internal action.
 
-        Args:
-            action_name: Name of the requested action.
-            context: Internal data required by the action.
+        If no context is supplied, the action remains
+        compatible with Version 0.1 and returns "ready".
 
-        Returns:
-            Structured result describing the action.
+        If context is supplied, the action can process
+        real internal data.
         """
 
         if action_name not in self.allowed_actions:
@@ -68,12 +68,10 @@ class ActionEngine:
         """
         Execute a complete validated plan.
 
-        Args:
-            plan: List of action names.
-            context: Shared internal context.
+        If no context is supplied, actions retain their
+        Version 0.1 "ready" behavior.
 
-        Returns:
-            Structured result containing every action result.
+        With context, actions process supplied internal data.
         """
 
         if not isinstance(plan, list):
@@ -118,14 +116,19 @@ class ActionEngine:
 
     def _observe_new_data(self, context):
         """
-        Retrieve new observation from internal context.
+        Observation action.
+
+        Without observation data:
+        preserve Version 0.1 behavior.
+
+        With observation data:
+        return the supplied observation.
         """
 
         if "observation" not in context:
             return {
                 "action": "observe_new_data",
-                "status": "rejected",
-                "reason": "observation_not_available"
+                "status": "ready"
             }
 
         return {
@@ -136,14 +139,19 @@ class ActionEngine:
 
     def _make_new_prediction(self, context):
         """
-        Retrieve the current prediction from internal context.
+        Prediction action.
+
+        Without prediction data:
+        preserve Version 0.1 behavior.
+
+        With prediction data:
+        return the supplied prediction.
         """
 
         if "prediction" not in context:
             return {
                 "action": "make_new_prediction",
-                "status": "rejected",
-                "reason": "prediction_not_available"
+                "status": "ready"
             }
 
         return {
@@ -156,23 +164,17 @@ class ActionEngine:
         """
         Compare prediction with actual value.
 
-        For numeric values, absolute error is calculated.
-        For matching non-numeric values, error is 0.
-        Otherwise error is 1.
+        Without prediction or actual data:
+        preserve Version 0.1 behavior.
+
+        With both values:
+        calculate prediction error.
         """
 
-        if "prediction" not in context:
+        if "prediction" not in context or "actual" not in context:
             return {
                 "action": "compare_prediction_with_actual",
-                "status": "rejected",
-                "reason": "prediction_not_available"
-            }
-
-        if "actual" not in context:
-            return {
-                "action": "compare_prediction_with_actual",
-                "status": "rejected",
-                "reason": "actual_not_available"
+                "status": "ready"
             }
 
         prediction = context["prediction"]
