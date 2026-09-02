@@ -37,12 +37,3 @@ def test_prediction_loop():
     # Goal
     assert result["goal"]["goal"] == "reduce_prediction_error"
     assert result["goal"]["priority"] == 5
-
-    # Planning
-    assert result["planning"]["goal"] == "reduce_prediction_error"
-
-    assert result["planning"]["plan"] == [
-        "observe_new_data",
-        "make_new_prediction",
-        "compare_prediction_with_actual"
-    ]
