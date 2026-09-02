@@ -15,3 +15,6 @@ def test_prediction_loop():
 
     assert result["attention"]["focus"] == "prediction_error"
     assert result["attention"]["value"] == 5
+
+    assert result["learning"]["error"] == 5
+    assert result["learning"]["learning_signal"] == 5
