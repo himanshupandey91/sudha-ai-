@@ -3,10 +3,40 @@ from core.simulation import SimulationEngine
 from core.experiment import ExperimentManager
 
 
+class SlowSimulationEngine(SimulationEngine):
+
+    def simulate(self, hypothesis, state=None):
+        """
+        Add a very small delay so the asynchronous
+        stop test can reliably interrupt the loop.
+        """
+
+        import time
+
+        time.sleep(0.01)
+
+        return super().simulate(
+            hypothesis,
+            state
+        )
+
+
 def create_manager(max_experiments=10):
 
     hypothesis_engine = HypothesisEngine()
     simulation_engine = SimulationEngine()
+
+    return ExperimentManager(
+        hypothesis_engine,
+        simulation_engine,
+        max_experiments=max_experiments
+    )
+
+
+def create_slow_manager(max_experiments=100):
+
+    hypothesis_engine = HypothesisEngine()
+    simulation_engine = SlowSimulationEngine()
 
     return ExperimentManager(
         hypothesis_engine,
@@ -141,6 +171,67 @@ def test_experiment_manager_stop():
     assert stop_result["status"] == "stopped"
     assert manager.is_running() is False
     assert manager.stop_requested is True
+
+
+def test_experiment_manager_async_stop():
+
+    manager = create_slow_manager(
+        max_experiments=100
+    )
+
+    worker = manager.start_async(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    assert manager.is_running() is True
+
+    stop_result = manager.stop()
+
+    assert stop_result["status"] == "stopped"
+    assert stop_result["stop_requested"] is True
+
+    finished = manager.wait(
+        timeout=2
+    )
+
+    assert finished is True
+    assert manager.is_running() is False
+    assert manager.stop_requested is True
+
+    assert worker.is_alive() is False
+
+    assert manager.experiment_count < 100
+
+
+def test_experiment_manager_async_start():
+
+    manager = create_slow_manager(
+        max_experiments=2
+    )
+
+    worker = manager.start_async(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    finished = manager.wait(
+        timeout=2
+    )
+
+    assert finished is True
+    assert worker.is_alive() is False
+
+    assert manager.is_running() is False
+    assert manager.experiment_count == 2
 
 
 def test_experiment_manager_rejects_invalid_goal():
