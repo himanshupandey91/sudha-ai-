@@ -33,3 +33,7 @@ def test_prediction_loop():
     assert result["prediction"] == 10
     assert result["actual"] == 15
     assert result["difference"] == 5
+
+    # Goal
+    assert result["goal"]["goal"] == "reduce_prediction_error"
+    assert result["goal"]["priority"] == 5
