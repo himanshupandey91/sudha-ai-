@@ -6,6 +6,8 @@ Connects:
 Observation
 → Prediction
 → Difference
+→ Memory
+→ Memory Retrieval
 → Attention
 → Learning
 → Curiosity
@@ -17,6 +19,7 @@ Observation
 
 from core.prediction import PredictionEngine
 from core.difference import DifferenceEngine
+from core.memory import MemoryEngine
 from core.attention import AttentionEngine
 from core.learning import LearningEngine
 from core.curiosity import CuriosityEngine
@@ -31,6 +34,7 @@ class PredictionLoop:
     def __init__(self):
         self.predictor = PredictionEngine()
         self.difference_engine = DifferenceEngine()
+        self.memory = MemoryEngine()
         self.attention = AttentionEngine()
         self.learning = LearningEngine()
         self.curiosity = CuriosityEngine()
@@ -48,6 +52,8 @@ class PredictionLoop:
         Observation
         → Prediction
         → Difference
+        → Memory Store
+        → Memory Retrieval
         → Attention
         → Learning
         → Curiosity
@@ -66,21 +72,41 @@ class PredictionLoop:
             actual
         )
 
-        # 3. Attention
-        attention_state = self.attention.focus({
+        # 3. Create structured experience
+        experience = {
             "observation": observation,
             "prediction": prediction,
             "actual": actual,
             "difference": difference
-        })
+        }
 
-        # 4. Learning
-        learning_state = self.learning.learn(difference)
+        # 4. Store experience in memory
+        memory_store = self.memory.store(
+            experience
+        )
 
-        # 5. Curiosity
-        curiosity_state = self.curiosity.calculate(difference)
+        # 5. Retrieve memories with equal or greater
+        # prediction error
+        memory_retrieval = self.memory.retrieve_by_difference(
+            difference
+        )
 
-        # 6. World Model
+        # 6. Attention
+        attention_state = self.attention.focus(
+            experience
+        )
+
+        # 7. Learning
+        learning_state = self.learning.learn(
+            difference
+        )
+
+        # 8. Curiosity
+        curiosity_state = self.curiosity.calculate(
+            difference
+        )
+
+        # 9. World Model
         state = self.world_model.update(
             observation=observation,
             prediction=prediction,
@@ -88,18 +114,17 @@ class PredictionLoop:
             difference=difference
         )
 
-        # 7. Goal Generation
-        goal_state = self.goal.generate(state)
+        # 10. Goal Generation
+        goal_state = self.goal.generate(
+            state
+        )
 
-        # 8. Planning
-        planning_state = self.planning.create_plan(goal_state)
+        # 11. Planning
+        planning_state = self.planning.create_plan(
+            goal_state
+        )
 
-        # 9. Action
-        #
-        # The Action Engine receives the planned actions
-        # and the current internal context.
-        #
-        # No external side effects are allowed here.
+        # 12. Action
         action_context = {
             "observation": observation,
             "prediction": prediction,
@@ -112,6 +137,12 @@ class PredictionLoop:
         )
 
         # Add higher-level states
+        state["memory"] = {
+            "store": memory_store,
+            "retrieved": memory_retrieval,
+            "total_memories": self.memory.size()
+        }
+
         state["attention"] = attention_state
         state["learning"] = learning_state
         state["curiosity"] = curiosity_state
