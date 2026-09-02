@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.2
+Version 0.3
 
 Controls the continuous experimentation process.
 
@@ -14,6 +14,12 @@ Goal
 → Next Experiment
 → Repeat
 
+Version 0.3 adds:
+- Interruptible stop control
+- Thread-safe stop signal
+- Maximum experiment safety guard
+- Experiment status tracking
+
 Safety:
 - Explicit stop control
 - Maximum experiment guard
@@ -21,6 +27,9 @@ Safety:
 - No external side effects
 - Deterministic behavior
 """
+
+
+import threading
 
 
 class ExperimentManager:
@@ -37,6 +46,9 @@ class ExperimentManager:
         max_experiments:
             Maximum number of experiments allowed
             in one run.
+
+        The stop event allows another thread or
+        controller to safely request termination.
         """
 
         if not isinstance(max_experiments, int):
@@ -55,13 +67,18 @@ class ExperimentManager:
 
         self.running = False
         self.stop_requested = False
+
         self.experiment_count = 0
         self.results = []
         self.best_result = None
 
+        self.stop_event = threading.Event()
+
+        self.worker_thread = None
+
     def start(self, goal_state, state=None):
         """
-        Start the continuous experimentation loop.
+        Run the experimentation loop synchronously.
 
         The loop continues until:
 
@@ -69,8 +86,8 @@ class ExperimentManager:
         2. stop() is requested.
         3. max_experiments is reached.
 
-        The same goal can generate another experiment
-        after the available hypotheses have been tested.
+        This method is interruptible because every
+        experiment checks the stop event.
         """
 
         if not isinstance(goal_state, dict):
@@ -86,83 +103,153 @@ class ExperimentManager:
                 "state must be a dictionary"
             )
 
+        self._reset_run_state()
+
         self.running = True
-        self.stop_requested = False
-        self.experiment_count = 0
-        self.results = []
-        self.best_result = None
 
-        while self.running:
+        try:
 
-            if self.stop_requested:
-                break
+            while self.running:
 
-            if self.experiment_count >= self.max_experiments:
-                break
+                if self.stop_event.is_set():
+                    self.stop_requested = True
+                    break
 
-            hypotheses = self.hypothesis_engine.generate(
-                goal_state
-            )
+                if self.experiment_count >= self.max_experiments:
+                    break
 
-            if not hypotheses:
-                break
+                hypotheses = self.hypothesis_engine.generate(
+                    goal_state
+                )
 
-            hypothesis_index = (
-                self.experiment_count
-                % len(hypotheses)
-            )
+                if not hypotheses:
+                    break
 
-            hypothesis_data = hypotheses[
-                hypothesis_index
-            ]
+                hypothesis_index = (
+                    self.experiment_count
+                    % len(hypotheses)
+                )
 
-            hypothesis = hypothesis_data[
-                "hypothesis"
-            ]
+                hypothesis_data = hypotheses[
+                    hypothesis_index
+                ]
 
-            result = self.simulation_engine.simulate(
-                hypothesis,
-                state
-            )
+                hypothesis = hypothesis_data[
+                    "hypothesis"
+                ]
 
-            self.experiment_count += 1
+                result = self.simulation_engine.simulate(
+                    hypothesis,
+                    state
+                )
 
-            experiment_result = {
-                "experiment": self.experiment_count,
-                "hypothesis": hypothesis,
-                "result": result
-            }
+                self.experiment_count += 1
 
-            self.results.append(
-                experiment_result
-            )
+                experiment_result = {
+                    "experiment": self.experiment_count,
+                    "hypothesis": hypothesis,
+                    "result": result
+                }
 
-            if result.get("status") != "completed":
-                continue
+                self.results.append(
+                    experiment_result
+                )
 
-            self._update_best_result(
-                experiment_result
-            )
+                if result.get("status") != "completed":
+                    continue
 
-            if self._is_solution(result):
-                break
+                self._update_best_result(
+                    experiment_result
+                )
 
-        self.running = False
+                if self._is_solution(result):
+                    break
+
+        finally:
+
+            self.running = False
 
         return self.get_status()
+
+    def start_async(self, goal_state, state=None):
+        """
+        Start experimentation in a background thread.
+
+        This allows stop() to be called while the
+        experimentation loop is running.
+
+        Returns:
+            The worker thread.
+        """
+
+        if self.running:
+            return {
+                "status": "already_running"
+            }
+
+        if not isinstance(goal_state, dict):
+            raise TypeError(
+                "goal_state must be a dictionary"
+            )
+
+        if state is None:
+            state = {}
+
+        if not isinstance(state, dict):
+            raise TypeError(
+                "state must be a dictionary"
+            )
+
+        self.worker_thread = threading.Thread(
+            target=self.start,
+            args=(goal_state, state),
+            daemon=True
+        )
+
+        self.worker_thread.start()
+
+        return self.worker_thread
 
     def stop(self):
         """
         Request the experimentation loop to stop.
+
+        The stop event is thread-safe.
+
+        The currently running experiment is allowed
+        to finish. The next loop check stops further
+        experimentation.
         """
 
         self.stop_requested = True
-        self.running = False
+        self.stop_event.set()
 
         return {
-            "status": "stopped",
+            "status": "stop_requested",
             "experiment_count": self.experiment_count
         }
+
+    def wait(self, timeout=None):
+        """
+        Wait for the background experimentation thread
+        to finish.
+
+        timeout:
+            Maximum number of seconds to wait.
+
+        Returns:
+            True if the worker finished.
+            False if it is still running.
+        """
+
+        if self.worker_thread is None:
+            return True
+
+        self.worker_thread.join(
+            timeout=timeout
+        )
+
+        return not self.worker_thread.is_alive()
 
     def is_running(self):
         """
@@ -183,6 +270,20 @@ class ExperimentManager:
             "results": list(self.results),
             "best_result": self.best_result
         }
+
+    def _reset_run_state(self):
+        """
+        Reset state before starting a new run.
+        """
+
+        self.running = False
+        self.stop_requested = False
+
+        self.experiment_count = 0
+        self.results = []
+        self.best_result = None
+
+        self.stop_event.clear()
 
     def _update_best_result(self, experiment_result):
         """
