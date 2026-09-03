@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.3.2
+Version 0.4.0
 
 Controls the continuous experimentation process.
 
@@ -11,15 +11,18 @@ Goal
 → Hypothesis
 → Simulation
 → Evaluation
+→ Best Result
 → Next Experiment
 → Repeat
 
-Version 0.3.2:
+Version 0.4.0:
+- Evaluation Engine integration
+- Evaluation result recorded for every experiment
+- Best result selected through Evaluation Engine
 - Interruptible stop control
 - Thread-safe stop signal
 - Maximum experiment safety guard
 - Experiment status tracking
-- Complete stop response
 - Asynchronous experimentation support
 
 Safety:
@@ -33,6 +36,8 @@ Safety:
 
 import threading
 
+from core.evaluation import EvaluationEngine
+
 
 class ExperimentManager:
 
@@ -40,7 +45,8 @@ class ExperimentManager:
         self,
         hypothesis_engine,
         simulation_engine,
-        max_experiments=10
+        max_experiments=10,
+        evaluation_engine=None
     ):
         """
         Initialize the Experiment Manager.
@@ -48,6 +54,12 @@ class ExperimentManager:
         max_experiments:
             Maximum number of experiments allowed
             in one run.
+
+        evaluation_engine:
+            Optional EvaluationEngine.
+
+            If none is supplied, Sudha AI creates
+            its own EvaluationEngine.
 
         The stop event allows another thread or
         controller to safely request termination.
@@ -65,6 +77,12 @@ class ExperimentManager:
 
         self.hypothesis_engine = hypothesis_engine
         self.simulation_engine = simulation_engine
+        self.evaluation_engine = (
+            evaluation_engine
+            if evaluation_engine is not None
+            else EvaluationEngine()
+        )
+
         self.max_experiments = max_experiments
 
         self.running = False
@@ -72,7 +90,9 @@ class ExperimentManager:
 
         self.experiment_count = 0
         self.results = []
+        self.evaluations = []
         self.best_result = None
+        self.best_evaluation = None
 
         self.stop_event = threading.Event()
 
@@ -88,8 +108,7 @@ class ExperimentManager:
         2. stop() is requested.
         3. max_experiments is reached.
 
-        This method is interruptible because every
-        experiment checks the stop event.
+        Every completed experiment is evaluated.
         """
 
         if not isinstance(goal_state, dict):
@@ -160,8 +179,22 @@ class ExperimentManager:
                 if result.get("status") != "completed":
                     continue
 
-                self._update_best_result(
+                evaluation = self.evaluation_engine.evaluate(
                     experiment_result
+                )
+
+                experiment_result["evaluation"] = evaluation
+
+                self.evaluations.append(
+                    evaluation
+                )
+
+                if evaluation.get("status") != "evaluated":
+                    continue
+
+                self._update_best_result(
+                    experiment_result,
+                    evaluation
                 )
 
                 if self._is_solution(result):
@@ -222,8 +255,7 @@ class ExperimentManager:
         to finish. The next loop check stops further
         experimentation.
 
-        Returns a complete stop status so callers
-        can immediately verify the requested state.
+        Returns a complete stop status.
         """
 
         self.stop_requested = True
@@ -275,7 +307,9 @@ class ExperimentManager:
             "stop_requested": self.stop_requested,
             "experiment_count": self.experiment_count,
             "results": list(self.results),
-            "best_result": self.best_result
+            "evaluations": list(self.evaluations),
+            "best_result": self.best_result,
+            "best_evaluation": self.best_evaluation
         }
 
     def _reset_run_state(self):
@@ -288,47 +322,33 @@ class ExperimentManager:
 
         self.experiment_count = 0
         self.results = []
+        self.evaluations = []
         self.best_result = None
+        self.best_evaluation = None
 
         self.stop_event.clear()
 
-    def _update_best_result(self, experiment_result):
+    def _update_best_result(
+        self,
+        experiment_result,
+        evaluation
+    ):
         """
-        Keep the experiment with the lowest
-        predicted prediction error.
+        Update the best experiment using
+        the Evaluation Engine.
         """
 
-        result = experiment_result["result"]
-
-        predicted_difference = result.get(
-            "predicted_difference"
-        )
-
-        if not isinstance(
-            predicted_difference,
-            (int, float)
-        ):
-            return
-
-        if self.best_result is None:
+        if self.best_evaluation is None:
             self.best_result = experiment_result
+            self.best_evaluation = evaluation
             return
 
-        current_best = self.best_result[
-            "result"
-        ].get(
-            "predicted_difference"
-        )
-
-        if not isinstance(
-            current_best,
-            (int, float)
+        if self.evaluation_engine.better(
+            evaluation,
+            self.best_evaluation
         ):
             self.best_result = experiment_result
-            return
-
-        if predicted_difference < current_best:
-            self.best_result = experiment_result
+            self.best_evaluation = evaluation
 
     def _is_solution(self, result):
         """
