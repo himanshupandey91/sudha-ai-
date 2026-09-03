@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.4.0
+Version 0.5.0
 
 Controls the experimentation process.
 
@@ -11,31 +11,34 @@ Goal
 → Hypothesis
 → Simulation
 → Evaluation
-→ Best Result
+→ Selection
+→ Next Experiment
 → Repeat
 
-Version 0.4.0:
+Version 0.5.0:
 - Interruptible stop control
 - Thread-safe stop signal
 - Maximum experiment safety guard
 - Experiment status tracking
-- Complete stop response
 - Asynchronous experimentation support
 - Evaluation Engine integration
 - Evaluation history
-- Best evaluation tracking
+- Best result tracking
+- Evaluation-based hypothesis selection
+- Initial exploration of all hypotheses
+- Best-hypothesis exploitation after exploration
 
 Important:
-- Hypothesis selection is still round-robin in this version.
-- Evaluation-based hypothesis selection will be added
-  in a later version.
+- Every available hypothesis is explored once first.
+- After exploration, the best evaluated hypothesis is selected.
+- Selection is deterministic.
+- The simulation engine remains isolated from external side effects.
 
 Safety:
 - Explicit stop control
 - Maximum experiment guard
 - No arbitrary code execution
 - No external side effects
-- Deterministic behavior
 """
 
 
@@ -55,16 +58,6 @@ class ExperimentManager:
     ):
         """
         Initialize the Experiment Manager.
-
-        max_experiments:
-            Maximum number of experiments allowed
-            in one run.
-
-        evaluation_engine:
-            Optional EvaluationEngine instance.
-
-            If none is supplied, the manager creates
-            its own EvaluationEngine.
         """
 
         if not isinstance(max_experiments, int):
@@ -97,6 +90,8 @@ class ExperimentManager:
         self.best_result = None
         self.best_evaluation = None
 
+        self.explored_hypotheses = []
+
         self.stop_event = threading.Event()
 
         self.worker_thread = None
@@ -105,7 +100,14 @@ class ExperimentManager:
         """
         Run the experimentation loop synchronously.
 
-        The loop continues until:
+        Phase 1:
+            Explore every available hypothesis once.
+
+        Phase 2:
+            Select the best evaluated hypothesis
+            and continue exploiting it.
+
+        The loop stops when:
 
         1. A solution is found.
         2. stop() is requested.
@@ -147,14 +149,12 @@ class ExperimentManager:
                 if not hypotheses:
                     break
 
-                hypothesis_index = (
-                    self.experiment_count
-                    % len(hypotheses)
+                hypothesis_data = self._select_hypothesis(
+                    hypotheses
                 )
 
-                hypothesis_data = hypotheses[
-                    hypothesis_index
-                ]
+                if hypothesis_data is None:
+                    break
 
                 hypothesis = hypothesis_data[
                     "hypothesis"
@@ -191,6 +191,11 @@ class ExperimentManager:
                 )
 
                 if evaluation.get("status") == "evaluated":
+
+                    self._record_explored_hypothesis(
+                        hypothesis
+                    )
+
                     self._update_best_result(
                         experiment_result,
                         evaluation
@@ -208,12 +213,6 @@ class ExperimentManager:
     def start_async(self, goal_state, state=None):
         """
         Start experimentation in a background thread.
-
-        This allows stop() to be called while the
-        experimentation loop is running.
-
-        Returns:
-            The worker thread.
         """
 
         if self.running:
@@ -247,12 +246,6 @@ class ExperimentManager:
     def stop(self):
         """
         Request the experimentation loop to stop.
-
-        The currently running experiment is allowed
-        to finish.
-
-        The next loop check stops further
-        experimentation.
         """
 
         self.stop_requested = True
@@ -269,13 +262,6 @@ class ExperimentManager:
         """
         Wait for the background experimentation thread
         to finish.
-
-        timeout:
-            Maximum number of seconds to wait.
-
-        Returns:
-            True if the worker finished.
-            False if it is still running.
         """
 
         if self.worker_thread is None:
@@ -306,7 +292,10 @@ class ExperimentManager:
             "results": list(self.results),
             "evaluations": list(self.evaluations),
             "best_result": self.best_result,
-            "best_evaluation": self.best_evaluation
+            "best_evaluation": self.best_evaluation,
+            "explored_hypotheses": list(
+                self.explored_hypotheses
+            )
         }
 
     def _reset_run_state(self):
@@ -325,7 +314,70 @@ class ExperimentManager:
         self.best_result = None
         self.best_evaluation = None
 
+        self.explored_hypotheses = []
+
         self.stop_event.clear()
+
+    def _select_hypothesis(self, hypotheses):
+        """
+        Select the next hypothesis.
+
+        Exploration phase:
+            Select the first hypothesis that has
+            not been tested yet.
+
+        Exploitation phase:
+            Select the hypothesis with the best
+            evaluation.
+
+        This prevents the system from choosing
+        a hypothesis before it has evidence.
+        """
+
+        if not isinstance(hypotheses, list):
+            return None
+
+        if not hypotheses:
+            return None
+
+        for hypothesis_data in hypotheses:
+
+            hypothesis = hypothesis_data.get(
+                "hypothesis"
+            )
+
+            if hypothesis not in self.explored_hypotheses:
+                return hypothesis_data
+
+        if self.best_evaluation is not None:
+
+            best_hypothesis = self.best_evaluation.get(
+                "hypothesis"
+            )
+
+            for hypothesis_data in hypotheses:
+
+                if hypothesis_data.get(
+                    "hypothesis"
+                ) == best_hypothesis:
+
+                    return hypothesis_data
+
+        return hypotheses[0]
+
+    def _record_explored_hypothesis(
+        self,
+        hypothesis
+    ):
+        """
+        Record a hypothesis after successful evaluation.
+        """
+
+        if hypothesis not in self.explored_hypotheses:
+
+            self.explored_hypotheses.append(
+                hypothesis
+            )
 
     def _update_best_result(
         self,
@@ -334,9 +386,6 @@ class ExperimentManager:
     ):
         """
         Keep the experiment with the best evaluation.
-
-        Lower predicted difference means
-        better expected performance.
         """
 
         if self.best_evaluation is None:
@@ -358,9 +407,6 @@ class ExperimentManager:
         """
         Determine whether the simulation result
         is good enough to stop experimentation.
-
-        A predicted difference of zero means that
-        the simulation predicts no remaining error.
         """
 
         predicted_difference = result.get(
