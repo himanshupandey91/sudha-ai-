@@ -1,15 +1,17 @@
 """
 Sudha AI - Experiment Learning Engine
 
-Version 0.1
+Version 0.2
 
-Learns from completed experiment evaluations.
+Learns from completed experiment evaluations
+and tracks performance statistics for each hypothesis.
 
 Design goals:
 - Deterministic learning
 - Explicit learning records
 - Track successful hypotheses
-- Track unsuccessful hypotheses
+- Track partial results
+- Track hypothesis performance
 - Bounded history
 - No external side effects
 - Fully testable
@@ -42,6 +44,9 @@ class ExperimentLearningEngine:
     def learn(self, evaluation):
         """
         Convert an evaluation into a learning record.
+
+        Also updates the performance statistics
+        for the evaluated hypothesis.
         """
 
         if not isinstance(evaluation, dict):
@@ -160,6 +165,79 @@ class ExperimentLearningEngine:
                 performance[hypothesis] = difference
 
         return performance
+
+    def hypothesis_statistics(self):
+        """
+        Return detailed performance statistics
+        for every hypothesis.
+
+        Statistics include:
+
+        - tests
+        - best
+        - average
+        - latest
+        - success
+        - partial
+        """
+
+        statistics = {}
+
+        for record in self.records:
+
+            hypothesis = record[
+                "hypothesis"
+            ]
+
+            difference = record[
+                "predicted_difference"
+            ]
+
+            outcome = record[
+                "outcome"
+            ]
+
+            if hypothesis not in statistics:
+
+                statistics[hypothesis] = {
+                    "tests": 0,
+                    "best": difference,
+                    "average": 0,
+                    "latest": difference,
+                    "success": 0,
+                    "partial": 0
+                }
+
+            data = statistics[
+                hypothesis
+            ]
+
+            data["tests"] += 1
+
+            if difference < data["best"]:
+                data["best"] = difference
+
+            data["latest"] = difference
+
+            if outcome == "success":
+                data["success"] += 1
+
+            elif outcome == "partial":
+                data["partial"] += 1
+
+        for hypothesis, data in statistics.items():
+
+            values = [
+                record["predicted_difference"]
+                for record in self.records
+                if record["hypothesis"] == hypothesis
+            ]
+
+            data["average"] = (
+                sum(values) / len(values)
+            )
+
+        return statistics
 
     def size(self):
         """
