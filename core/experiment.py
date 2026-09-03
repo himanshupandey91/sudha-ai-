@@ -3,7 +3,7 @@ Sudha AI - Experiment Manager
 
 Version 0.4.0
 
-Controls the continuous experimentation process.
+Controls the experimentation process.
 
 Flow:
 
@@ -12,18 +12,23 @@ Goal
 → Simulation
 → Evaluation
 → Best Result
-→ Next Experiment
 → Repeat
 
 Version 0.4.0:
-- Evaluation Engine integration
-- Evaluation result recorded for every experiment
-- Best result selected through Evaluation Engine
 - Interruptible stop control
 - Thread-safe stop signal
 - Maximum experiment safety guard
 - Experiment status tracking
+- Complete stop response
 - Asynchronous experimentation support
+- Evaluation Engine integration
+- Evaluation history
+- Best evaluation tracking
+
+Important:
+- Hypothesis selection is still round-robin in this version.
+- Evaluation-based hypothesis selection will be added
+  in a later version.
 
 Safety:
 - Explicit stop control
@@ -56,13 +61,10 @@ class ExperimentManager:
             in one run.
 
         evaluation_engine:
-            Optional EvaluationEngine.
+            Optional EvaluationEngine instance.
 
-            If none is supplied, Sudha AI creates
+            If none is supplied, the manager creates
             its own EvaluationEngine.
-
-        The stop event allows another thread or
-        controller to safely request termination.
         """
 
         if not isinstance(max_experiments, int):
@@ -77,20 +79,21 @@ class ExperimentManager:
 
         self.hypothesis_engine = hypothesis_engine
         self.simulation_engine = simulation_engine
-        self.evaluation_engine = (
-            evaluation_engine
-            if evaluation_engine is not None
-            else EvaluationEngine()
-        )
-
         self.max_experiments = max_experiments
+
+        if evaluation_engine is None:
+            evaluation_engine = EvaluationEngine()
+
+        self.evaluation_engine = evaluation_engine
 
         self.running = False
         self.stop_requested = False
 
         self.experiment_count = 0
+
         self.results = []
         self.evaluations = []
+
         self.best_result = None
         self.best_evaluation = None
 
@@ -107,8 +110,6 @@ class ExperimentManager:
         1. A solution is found.
         2. stop() is requested.
         3. max_experiments is reached.
-
-        Every completed experiment is evaluated.
         """
 
         if not isinstance(goal_state, dict):
@@ -189,13 +190,11 @@ class ExperimentManager:
                     evaluation
                 )
 
-                if evaluation.get("status") != "evaluated":
-                    continue
-
-                self._update_best_result(
-                    experiment_result,
-                    evaluation
-                )
+                if evaluation.get("status") == "evaluated":
+                    self._update_best_result(
+                        experiment_result,
+                        evaluation
+                    )
 
                 if self._is_solution(result):
                     break
@@ -249,13 +248,11 @@ class ExperimentManager:
         """
         Request the experimentation loop to stop.
 
-        The stop event is thread-safe.
-
         The currently running experiment is allowed
-        to finish. The next loop check stops further
-        experimentation.
+        to finish.
 
-        Returns a complete stop status.
+        The next loop check stops further
+        experimentation.
         """
 
         self.stop_requested = True
@@ -321,8 +318,10 @@ class ExperimentManager:
         self.stop_requested = False
 
         self.experiment_count = 0
+
         self.results = []
         self.evaluations = []
+
         self.best_result = None
         self.best_evaluation = None
 
@@ -334,19 +333,24 @@ class ExperimentManager:
         evaluation
     ):
         """
-        Update the best experiment using
-        the Evaluation Engine.
+        Keep the experiment with the best evaluation.
+
+        Lower predicted difference means
+        better expected performance.
         """
 
         if self.best_evaluation is None:
+
             self.best_result = experiment_result
             self.best_evaluation = evaluation
+
             return
 
         if self.evaluation_engine.better(
             evaluation,
             self.best_evaluation
         ):
+
             self.best_result = experiment_result
             self.best_evaluation = evaluation
 
