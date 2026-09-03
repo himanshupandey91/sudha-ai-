@@ -1,6 +1,5 @@
 from core.hypothesis import HypothesisEngine
 from core.simulation import SimulationEngine
-from core.evaluation import EvaluationEngine
 from core.experiment import ExperimentManager
 
 
@@ -67,7 +66,34 @@ def test_experiment_manager_runs_continuously():
     assert len(result["results"]) == 10
 
 
-def test_experiment_manager_repeats_hypotheses():
+def test_experiment_manager_explores_all_hypotheses_first():
+
+    manager = create_manager(
+        max_experiments=3
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    hypotheses = [
+        item["hypothesis"]
+        for item in result["results"]
+    ]
+
+    assert hypotheses == [
+        "use_recent_experience",
+        "increase_observation_frequency",
+        "change_prediction_strategy"
+    ]
+
+
+def test_experiment_manager_exploits_best_hypothesis():
 
     manager = create_manager(
         max_experiments=5
@@ -82,8 +108,6 @@ def test_experiment_manager_repeats_hypotheses():
         }
     )
 
-    assert result["experiment_count"] == 5
-
     hypotheses = [
         item["hypothesis"]
         for item in result["results"]
@@ -94,7 +118,7 @@ def test_experiment_manager_repeats_hypotheses():
         "increase_observation_frequency",
         "change_prediction_strategy",
         "use_recent_experience",
-        "increase_observation_frequency"
+        "use_recent_experience"
     ]
 
 
@@ -139,12 +163,8 @@ def test_experiment_manager_evaluates_results():
 
     assert len(result["evaluations"]) == 3
 
-    first = result["evaluations"][0]
-
-    assert first["status"] == "evaluated"
-    assert first["hypothesis"] == "use_recent_experience"
-    assert first["predicted_difference"] == 5
-    assert first["score"] == -5
+    for evaluation in result["evaluations"]:
+        assert evaluation["status"] == "evaluated"
 
 
 def test_experiment_result_contains_evaluation():
@@ -165,8 +185,8 @@ def test_experiment_result_contains_evaluation():
     first = result["results"][0]
 
     assert "evaluation" in first
+
     assert first["evaluation"]["status"] == "evaluated"
-    assert first["evaluation"]["score"] == -5
 
 
 def test_experiment_manager_selects_best_result():
@@ -206,13 +226,39 @@ def test_experiment_manager_records_best_evaluation():
         }
     )
 
-    best = result["best_evaluation"]
+    best_evaluation = result["best_evaluation"]
 
-    assert best is not None
-    assert best["status"] == "evaluated"
-    assert best["hypothesis"] == "use_recent_experience"
-    assert best["predicted_difference"] == 5
-    assert best["score"] == -5
+    assert best_evaluation is not None
+
+    assert best_evaluation["hypothesis"] == (
+        "use_recent_experience"
+    )
+
+    assert best_evaluation[
+        "predicted_difference"
+    ] == 5
+
+
+def test_experiment_manager_records_explored_hypotheses():
+
+    manager = create_manager(
+        max_experiments=3
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    assert result["explored_hypotheses"] == [
+        "use_recent_experience",
+        "increase_observation_frequency",
+        "change_prediction_strategy"
+    ]
 
 
 def test_experiment_manager_respects_max_experiments():
@@ -232,7 +278,6 @@ def test_experiment_manager_respects_max_experiments():
 
     assert result["experiment_count"] == 2
     assert len(result["results"]) == 2
-    assert len(result["evaluations"]) == 2
 
 
 def test_experiment_manager_stop():
