@@ -1,5 +1,6 @@
 from core.hypothesis import HypothesisEngine
 from core.simulation import SimulationEngine
+from core.evaluation import EvaluationEngine
 from core.experiment import ExperimentManager
 
 
@@ -121,6 +122,53 @@ def test_experiment_manager_records_results():
     assert first["result"]["status"] == "completed"
 
 
+def test_experiment_manager_evaluates_results():
+
+    manager = create_manager(
+        max_experiments=3
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    assert len(result["evaluations"]) == 3
+
+    first = result["evaluations"][0]
+
+    assert first["status"] == "evaluated"
+    assert first["hypothesis"] == "use_recent_experience"
+    assert first["predicted_difference"] == 5
+    assert first["score"] == -5
+
+
+def test_experiment_result_contains_evaluation():
+
+    manager = create_manager(
+        max_experiments=1
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    first = result["results"][0]
+
+    assert "evaluation" in first
+    assert first["evaluation"]["status"] == "evaluated"
+    assert first["evaluation"]["score"] == -5
+
+
 def test_experiment_manager_selects_best_result():
 
     manager = create_manager(
@@ -143,6 +191,30 @@ def test_experiment_manager_selects_best_result():
     assert best["result"]["predicted_difference"] == 5
 
 
+def test_experiment_manager_records_best_evaluation():
+
+    manager = create_manager(
+        max_experiments=3
+    )
+
+    result = manager.start(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        {
+            "difference": 10
+        }
+    )
+
+    best = result["best_evaluation"]
+
+    assert best is not None
+    assert best["status"] == "evaluated"
+    assert best["hypothesis"] == "use_recent_experience"
+    assert best["predicted_difference"] == 5
+    assert best["score"] == -5
+
+
 def test_experiment_manager_respects_max_experiments():
 
     manager = create_manager(
@@ -160,6 +232,7 @@ def test_experiment_manager_respects_max_experiments():
 
     assert result["experiment_count"] == 2
     assert len(result["results"]) == 2
+    assert len(result["evaluations"]) == 2
 
 
 def test_experiment_manager_stop():
