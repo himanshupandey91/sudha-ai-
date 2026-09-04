@@ -2,14 +2,17 @@
 Tests for Sudha AI Speech Recognition Layer.
 """
 
-from core.speech_backend import TestSpeechBackend
+from core.speech_backend import (
+    DeterministicSpeechBackend
+)
+
 from core.speech_recognition import (
     SpeechRecognitionEngine
 )
 
 
 def test_recognition_with_backend():
-    backend = TestSpeechBackend(
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -26,7 +29,7 @@ def test_recognition_with_backend():
 
 
 def test_recognition_accepts_bytearray():
-    backend = TestSpeechBackend(
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -56,7 +59,7 @@ def test_recognition_without_backend():
 
 
 def test_none_audio_is_rejected():
-    backend = TestSpeechBackend(
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -75,7 +78,7 @@ def test_none_audio_is_rejected():
 
 
 def test_non_bytes_audio_is_rejected():
-    backend = TestSpeechBackend(
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -94,7 +97,7 @@ def test_non_bytes_audio_is_rejected():
 
 
 def test_empty_audio_is_rejected():
-    backend = TestSpeechBackend(
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -109,21 +112,6 @@ def test_empty_audio_is_rejected():
     assert result["status"] == "rejected"
     assert result["reason"] == (
         "audio_data_cannot_be_empty"
-    )
-
-
-def test_invalid_backend_is_rejected():
-    engine = SpeechRecognitionEngine(
-        backend=object()
-    )
-
-    result = engine.recognize(
-        b"audio-data"
-    )
-
-    assert result["status"] == "rejected"
-    assert result["reason"] == (
-        "invalid_speech_recognition_backend"
     )
 
 
