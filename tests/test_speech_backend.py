@@ -6,7 +6,7 @@ import pytest
 
 from core.speech_backend import (
     SpeechBackend,
-    TestSpeechBackend
+    DeterministicSpeechBackend
 )
 
 
@@ -17,8 +17,8 @@ def test_base_backend_requires_transcribe():
         backend.transcribe(b"audio-data")
 
 
-def test_test_backend_returns_text():
-    backend = TestSpeechBackend(
+def test_deterministic_backend_returns_text():
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -29,8 +29,8 @@ def test_test_backend_returns_text():
     assert result == "Hello Sudha"
 
 
-def test_test_backend_accepts_bytearray():
-    backend = TestSpeechBackend(
+def test_deterministic_backend_accepts_bytearray():
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -41,8 +41,8 @@ def test_test_backend_accepts_bytearray():
     assert result == "Hello Sudha"
 
 
-def test_test_backend_rejects_non_bytes():
-    backend = TestSpeechBackend(
+def test_deterministic_backend_rejects_non_bytes():
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -52,8 +52,8 @@ def test_test_backend_rejects_non_bytes():
         )
 
 
-def test_test_backend_rejects_empty_audio():
-    backend = TestSpeechBackend(
+def test_deterministic_backend_rejects_empty_audio():
+    backend = DeterministicSpeechBackend(
         text="Hello Sudha"
     )
 
@@ -63,8 +63,8 @@ def test_test_backend_rejects_empty_audio():
         )
 
 
-def test_test_backend_requires_string_text():
+def test_deterministic_backend_requires_string_text():
     with pytest.raises(TypeError):
-        TestSpeechBackend(
+        DeterministicSpeechBackend(
             text=123
         )
