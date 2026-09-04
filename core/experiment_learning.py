@@ -1,18 +1,18 @@
 """
 Sudha AI - Experiment Learning Engine
 
-Version 0.2
+Version 0.3
 
 Learns from completed experiment evaluations
-and tracks performance statistics for each hypothesis.
+and maintains performance statistics for each hypothesis.
 
 Design goals:
 - Deterministic learning
 - Explicit learning records
-- Track successful hypotheses
-- Track partial results
-- Track hypothesis performance
+- Hypothesis performance tracking
+- Success and partial outcome tracking
 - Bounded history
+- Reliable hypothesis selection
 - No external side effects
 - Fully testable
 """
@@ -45,8 +45,12 @@ class ExperimentLearningEngine:
         """
         Convert an evaluation into a learning record.
 
-        Also updates the performance statistics
-        for the evaluated hypothesis.
+        The record contains:
+        - hypothesis
+        - predicted_difference
+        - outcome
+
+        Valid records are retained in bounded memory.
         """
 
         if not isinstance(evaluation, dict):
@@ -85,7 +89,6 @@ class ExperimentLearningEngine:
 
         if predicted_difference == 0:
             outcome = "success"
-
         else:
             outcome = "partial"
 
@@ -122,9 +125,6 @@ class ExperimentLearningEngine:
         """
         Return the hypothesis with the lowest
         observed predicted difference.
-
-        Returns:
-            Hypothesis name or None.
         """
 
         if not self.records:
@@ -142,7 +142,7 @@ class ExperimentLearningEngine:
     def hypothesis_performance(self):
         """
         Return the best observed performance
-        for each hypothesis.
+        for every hypothesis.
         """
 
         performance = {}
@@ -159,8 +159,7 @@ class ExperimentLearningEngine:
 
             if (
                 hypothesis not in performance
-                or difference
-                < performance[hypothesis]
+                or difference < performance[hypothesis]
             ):
                 performance[hypothesis] = difference
 
@@ -168,8 +167,7 @@ class ExperimentLearningEngine:
 
     def hypothesis_statistics(self):
         """
-        Return detailed performance statistics
-        for every hypothesis.
+        Return detailed statistics for every hypothesis.
 
         Statistics include:
 
@@ -238,6 +236,71 @@ class ExperimentLearningEngine:
             )
 
         return statistics
+
+    def select_best_hypothesis(self):
+        """
+        Select the best hypothesis using observed performance.
+
+        Selection priority:
+
+        1. Lowest average predicted difference.
+        2. If tied, lowest best predicted difference.
+        3. If still tied, earliest hypothesis encountered.
+
+        Returns:
+            Hypothesis name or None.
+        """
+
+        statistics = self.hypothesis_statistics()
+
+        if not statistics:
+            return None
+
+        best_hypothesis = None
+        best_key = None
+
+        for hypothesis, data in statistics.items():
+
+            selection_key = (
+                data["average"],
+                data["best"]
+            )
+
+            if (
+                best_key is None
+                or selection_key < best_key
+            ):
+                best_key = selection_key
+                best_hypothesis = hypothesis
+
+        return best_hypothesis
+
+    def get_hypothesis_statistics(
+        self,
+        hypothesis
+    ):
+        """
+        Return statistics for one hypothesis.
+
+        Returns None if the hypothesis has
+        never been evaluated.
+        """
+
+        if not isinstance(hypothesis, str):
+            raise TypeError(
+                "hypothesis must be a string"
+            )
+
+        statistics = self.hypothesis_statistics()
+
+        data = statistics.get(
+            hypothesis
+        )
+
+        if data is None:
+            return None
+
+        return data.copy()
 
     def size(self):
         """
