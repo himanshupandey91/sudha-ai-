@@ -1,7 +1,7 @@
 """
 Sudha AI - Whisper.cpp CLI Backend
 
-Version 0.1
+Version 0.2
 
 Provides an adapter between Sudha AI and the
 local whisper.cpp command-line executable.
@@ -18,15 +18,14 @@ Local GGML Whisper Model
     ↓
 Transcribed Text
 
-Design goals:
-- Local/offline inference
-- Explicit executable configuration
-- Explicit model configuration
-- No automatic downloads
-- No shell execution
-- Controlled subprocess arguments
-- Deterministic error handling
-- Testable architecture
+Version 0.2:
+- Adds explicit transcribe_file() API.
+- Preserves transcribe() compatibility.
+- Keeps subprocess execution controlled.
+- No shell execution.
+- No automatic downloads.
+- Explicit executable/model configuration.
+- Deterministic error handling.
 """
 
 from pathlib import Path
@@ -43,15 +42,6 @@ class WhisperCLIBackend:
     ):
         """
         Initialize the whisper.cpp CLI backend.
-
-        executable_path:
-            Path to the local whisper-cli executable.
-
-        model_path:
-            Path to the local GGML Whisper model.
-
-        timeout_seconds:
-            Maximum allowed inference time.
         """
 
         if not isinstance(
@@ -118,6 +108,17 @@ class WhisperCLIBackend:
 
     def transcribe(self, audio_file):
         """
+        Backward-compatible transcription API.
+
+        Delegates to transcribe_file().
+        """
+
+        return self.transcribe_file(
+            audio_file
+        )
+
+    def transcribe_file(self, audio_file):
+        """
         Transcribe a local audio file using whisper.cpp.
 
         The audio file must already exist.
@@ -126,27 +127,9 @@ class WhisperCLIBackend:
         No model is downloaded.
         """
 
-        if not isinstance(
-            audio_file,
-            str
-        ):
-            raise TypeError(
-                "audio_file must be a string"
-            )
-
-        if audio_file.strip() == "":
-            raise ValueError(
-                "audio_file cannot be empty"
-            )
-
-        audio_path = Path(
+        self._validate_audio_file(
             audio_file
         )
-
-        if not audio_path.is_file():
-            raise FileNotFoundError(
-                "audio_file_not_found"
-            )
 
         executable = Path(
             self.executable_path
@@ -165,6 +148,10 @@ class WhisperCLIBackend:
             raise FileNotFoundError(
                 "whisper_model_not_found"
             )
+
+        audio_path = Path(
+            audio_file
+        )
 
         command = [
             str(executable),
@@ -221,12 +208,40 @@ class WhisperCLIBackend:
             output
         )
 
+    def _validate_audio_file(
+        self,
+        audio_file
+    ):
+        """
+        Validate the supplied audio file path.
+        """
+
+        if not isinstance(
+            audio_file,
+            (str, Path)
+        ):
+            raise TypeError(
+                "audio_file must be a string or Path"
+            )
+
+        if str(audio_file).strip() == "":
+            raise ValueError(
+                "audio_file cannot be empty"
+            )
+
+        audio_path = Path(
+            audio_file
+        )
+
+        if not audio_path.is_file():
+            raise FileNotFoundError(
+                "audio_file_not_found"
+            )
+
     def _extract_text(self, output):
         """
-        Extract transcription text from whisper.cpp
-        command-line output.
-
-        This parser intentionally stays conservative.
+        Extract transcription text from
+        whisper.cpp command-line output.
         """
 
         lines = output.splitlines()
@@ -241,9 +256,11 @@ class WhisperCLIBackend:
                 continue
 
             if cleaned.startswith("["):
+
                 closing = cleaned.find("]")
 
                 if closing != -1:
+
                     cleaned = (
                         cleaned[
                             closing + 1:
@@ -258,6 +275,7 @@ class WhisperCLIBackend:
             )
 
         if not text_lines:
+
             raise RuntimeError(
                 "whisper_cli_transcription_empty"
             )
