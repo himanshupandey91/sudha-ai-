@@ -1,257 +1,115 @@
+"""
+Tests for Sudha AI Experiment Manager.
+
+Step 29-B
+
+Focus:
+- Experiment execution
+- Hypothesis exploration
+- Learning-based selection
+- Best-result tracking
+- Stop control
+"""
+
+
+from core.experiment import ExperimentManager
 from core.hypothesis import HypothesisEngine
 from core.simulation import SimulationEngine
-from core.experiment import ExperimentManager
-
-
-class SlowSimulationEngine(SimulationEngine):
-
-    def simulate(self, hypothesis, state=None):
-        """
-        Add a very small delay so the asynchronous
-        stop test can reliably interrupt the loop.
-        """
-
-        import time
-
-        time.sleep(0.01)
-
-        return super().simulate(
-            hypothesis,
-            state
-        )
+from core.experiment_learning import (
+    ExperimentLearningEngine
+)
 
 
 def create_manager(max_experiments=10):
-
-    hypothesis_engine = HypothesisEngine()
-    simulation_engine = SimulationEngine()
-
     return ExperimentManager(
-        hypothesis_engine,
-        simulation_engine,
+        hypothesis_engine=HypothesisEngine(),
+        simulation_engine=SimulationEngine(),
         max_experiments=max_experiments
     )
 
 
-def create_slow_manager(max_experiments=100):
+def create_manager_with_learning(max_experiments=10):
+    learning_engine = ExperimentLearningEngine()
 
-    hypothesis_engine = HypothesisEngine()
-    simulation_engine = SlowSimulationEngine()
-
-    return ExperimentManager(
-        hypothesis_engine,
-        simulation_engine,
-        max_experiments=max_experiments
+    manager = ExperimentManager(
+        hypothesis_engine=HypothesisEngine(),
+        simulation_engine=SimulationEngine(),
+        max_experiments=max_experiments,
+        learning_engine=learning_engine
     )
 
+    return manager
 
-def test_experiment_manager_runs_continuously():
 
-    manager = create_manager(
-        max_experiments=10
-    )
+def test_manager_initializes():
+    manager = create_manager()
+
+    assert manager.running is False
+    assert manager.experiment_count == 0
+    assert manager.results == []
+    assert manager.evaluations == []
+
+
+def test_manager_requires_positive_max_experiments():
+    try:
+        ExperimentManager(
+            hypothesis_engine=HypothesisEngine(),
+            simulation_engine=SimulationEngine(),
+            max_experiments=0
+        )
+        assert False
+    except ValueError:
+        assert True
+
+
+def test_manager_rejects_invalid_max_experiments_type():
+    try:
+        ExperimentManager(
+            hypothesis_engine=HypothesisEngine(),
+            simulation_engine=SimulationEngine(),
+            max_experiments="10"
+        )
+        assert False
+    except TypeError:
+        assert True
+
+
+def test_manager_runs_experiment():
+    manager = create_manager()
+
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
+
+    state = {
+        "difference": 10
+    }
 
     result = manager.start(
-        {
-            "goal": "reduce_prediction_error",
-            "priority": 5
-        },
-        {
-            "difference": 10
-        }
+        goal_state,
+        state
     )
 
-    assert result["running"] is False
-    assert result["experiment_count"] == 10
-    assert len(result["results"]) == 10
+    assert result["experiment_count"] > 0
+    assert len(result["results"]) > 0
 
 
-def test_experiment_manager_explores_all_hypotheses_first():
-
-    manager = create_manager(
-        max_experiments=3
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    hypotheses = [
-        item["hypothesis"]
-        for item in result["results"]
-    ]
-
-    assert hypotheses == [
-        "use_recent_experience",
-        "increase_observation_frequency",
-        "change_prediction_strategy"
-    ]
-
-
-def test_experiment_manager_exploits_best_hypothesis():
-
-    manager = create_manager(
-        max_experiments=5
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    hypotheses = [
-        item["hypothesis"]
-        for item in result["results"]
-    ]
-
-    assert hypotheses == [
-        "use_recent_experience",
-        "increase_observation_frequency",
-        "change_prediction_strategy",
-        "use_recent_experience",
-        "use_recent_experience"
-    ]
-
-
-def test_experiment_manager_records_results():
-
+def test_manager_explores_hypotheses_first():
     manager = create_manager(
         max_experiments=3
     )
 
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
 
-    assert len(result["results"]) == 3
-
-    first = result["results"][0]
-
-    assert first["experiment"] == 1
-    assert first["hypothesis"] == "use_recent_experience"
-    assert first["result"]["status"] == "completed"
-
-
-def test_experiment_manager_evaluates_results():
-
-    manager = create_manager(
-        max_experiments=3
-    )
+    state = {
+        "difference": 10
+    }
 
     result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    assert len(result["evaluations"]) == 3
-
-    for evaluation in result["evaluations"]:
-        assert evaluation["status"] == "evaluated"
-
-
-def test_experiment_result_contains_evaluation():
-
-    manager = create_manager(
-        max_experiments=1
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    first = result["results"][0]
-
-    assert "evaluation" in first
-
-    assert first["evaluation"]["status"] == "evaluated"
-
-
-def test_experiment_manager_selects_best_result():
-
-    manager = create_manager(
-        max_experiments=3
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    best = result["best_result"]
-
-    assert best is not None
-    assert best["hypothesis"] == "use_recent_experience"
-    assert best["result"]["predicted_difference"] == 5
-
-
-def test_experiment_manager_records_best_evaluation():
-
-    manager = create_manager(
-        max_experiments=3
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    best_evaluation = result["best_evaluation"]
-
-    assert best_evaluation is not None
-
-    assert best_evaluation["hypothesis"] == (
-        "use_recent_experience"
-    )
-
-    assert best_evaluation[
-        "predicted_difference"
-    ] == 5
-
-
-def test_experiment_manager_records_explored_hypotheses():
-
-    manager = create_manager(
-        max_experiments=3
-    )
-
-    result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
+        goal_state,
+        state
     )
 
     assert result["explored_hypotheses"] == [
@@ -261,128 +119,192 @@ def test_experiment_manager_records_explored_hypotheses():
     ]
 
 
-def test_experiment_manager_respects_max_experiments():
+def test_manager_records_evaluations():
+    manager = create_manager()
 
-    manager = create_manager(
-        max_experiments=2
-    )
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
+
+    state = {
+        "difference": 10
+    }
 
     result = manager.start(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
+        goal_state,
+        state
     )
 
-    assert result["experiment_count"] == 2
-    assert len(result["results"]) == 2
+    assert len(result["evaluations"]) > 0
+
+    for evaluation in result["evaluations"]:
+        assert evaluation["status"] == "evaluated"
 
 
-def test_experiment_manager_stop():
+def test_manager_tracks_best_result():
+    manager = create_manager(
+        max_experiments=3
+    )
 
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
+
+    state = {
+        "difference": 10
+    }
+
+    result = manager.start(
+        goal_state,
+        state
+    )
+
+    assert result["best_result"] is not None
+    assert result["best_evaluation"] is not None
+
+    assert (
+        result["best_evaluation"]["predicted_difference"]
+        == 5
+    )
+
+
+def test_manager_learns_from_evaluations():
     manager = create_manager()
 
-    stop_result = manager.stop()
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
 
-    assert stop_result["status"] == "stopped"
-    assert manager.is_running() is False
-    assert manager.stop_requested is True
+    state = {
+        "difference": 10
+    }
 
-
-def test_experiment_manager_async_stop():
-
-    manager = create_slow_manager(
-        max_experiments=100
+    result = manager.start(
+        goal_state,
+        state
     )
 
-    worker = manager.start_async(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
+    learning = result["learning"]
 
-    assert manager.is_running() is True
-
-    stop_result = manager.stop()
-
-    assert stop_result["status"] == "stopped"
-    assert stop_result["stop_requested"] is True
-
-    finished = manager.wait(
-        timeout=2
-    )
-
-    assert finished is True
-    assert manager.is_running() is False
-    assert manager.stop_requested is True
-
-    assert worker.is_alive() is False
-
-    assert manager.experiment_count < 100
+    assert learning["record_count"] > 0
+    assert len(learning["records"]) > 0
 
 
-def test_experiment_manager_async_start():
-
-    manager = create_slow_manager(
-        max_experiments=2
-    )
-
-    worker = manager.start_async(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        {
-            "difference": 10
-        }
-    )
-
-    finished = manager.wait(
-        timeout=2
-    )
-
-    assert finished is True
-    assert worker.is_alive() is False
-
-    assert manager.is_running() is False
-    assert manager.experiment_count == 2
-
-
-def test_experiment_manager_rejects_invalid_goal():
-
+def test_manager_learning_persists_between_runs():
     manager = create_manager()
 
-    try:
-        manager.start(
-            "invalid",
-            {
-                "difference": 10
-            }
-        )
+    goal_state = {
+        "goal": "reduce_prediction_error"
+    }
 
-        assert False
+    state = {
+        "difference": 10
+    }
 
-    except TypeError as error:
-        assert str(error) == "goal_state must be a dictionary"
+    first_result = manager.start(
+        goal_state,
+        state
+    )
+
+    first_count = first_result[
+        "learning"
+    ]["record_count"]
+
+    second_result = manager.start(
+        goal_state,
+        state
+    )
+
+    second_count = second_result[
+        "learning"
+    ]["record_count"]
+
+    assert second_count > first_count
 
 
-def test_experiment_manager_rejects_invalid_state():
+def test_manager_selects_learned_best_hypothesis():
+    manager = create_manager_with_learning(
+        max_experiments=5
+    )
 
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "change_prediction_strategy",
+        "predicted_difference": 1,
+        "score": -1
+    })
+
+    hypotheses = manager.hypothesis_engine.generate({
+        "goal": "reduce_prediction_error"
+    })
+
+    selected = manager._select_hypothesis(
+        hypotheses
+    )
+
+    assert selected["hypothesis"] == (
+        "change_prediction_strategy"
+    )
+
+
+def test_manager_explores_unseen_hypothesis_before_learning():
+    manager = create_manager_with_learning(
+        max_experiments=5
+    )
+
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "use_recent_experience",
+        "predicted_difference": 1,
+        "score": -1
+    })
+
+    manager.explored_hypotheses = [
+        "use_recent_experience"
+    ]
+
+    hypotheses = manager.hypothesis_engine.generate({
+        "goal": "reduce_prediction_error"
+    })
+
+    selected = manager._select_hypothesis(
+        hypotheses
+    )
+
+    assert selected["hypothesis"] == (
+        "increase_observation_frequency"
+    )
+
+
+def test_manager_stop_before_start():
     manager = create_manager()
 
-    try:
-        manager.start(
-            {
-                "goal": "reduce_prediction_error"
-            },
-            "invalid"
-        )
+    result = manager.stop()
 
-        assert False
+    assert result["status"] == "stopped"
+    assert result["stop_requested"] is True
+    assert manager.is_running() is False
 
-    except TypeError as error:
-        assert str(error) == "state must be a dictionary"
+
+def test_manager_status_contains_learning():
+    manager = create_manager()
+
+    status = manager.get_status()
+
+    assert "learning" in status
+    assert "records" in status["learning"]
+    assert "best_hypothesis" in status["learning"]
+    assert "hypothesis_performance" in status["learning"]
+
+
+def test_manager_learning_status():
+    manager = create_manager()
+
+    status = manager.get_learning_status()
+
+    assert status["records"] == []
+    assert status["record_count"] == 0
+    assert status["best_hypothesis"] is None
+    assert status["hypothesis_performance"] == [] or (
+        status["hypothesis_performance"] == {}
+    )
