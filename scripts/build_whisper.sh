@@ -7,7 +7,7 @@ echo "=== Sudha AI: Building whisper.cpp ==="
 if [ -d "whisper.cpp" ]; then
     echo "whisper.cpp directory already exists."
 else
-    git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git
+    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git
 fi
 
 cd whisper.cpp
