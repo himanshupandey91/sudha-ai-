@@ -1,42 +1,20 @@
 """
 Sudha AI - Whisper.cpp CLI Backend
 
-Version 0.3
+Version 0.3.1
 
 Provides an adapter between Sudha AI and the
 local whisper.cpp command-line executable.
-
-Architecture:
-
-Audio File
-    ↓
-WhisperCLIBackend
-    ↓
-whisper-cli
-    ↓
-Local Whisper Model
-    ↓
-Transcribed Text
-
-Version 0.3:
-- Supports real local whisper.cpp execution.
-- Validates executable, model and audio paths.
-- Uses subprocess without shell execution.
-- Supports configurable timeout.
-- Preserves transcribe() compatibility.
-- Provides transcribe_file().
-- Provides deterministic output parsing.
-- No automatic model downloads.
-- No network access.
 
 Design goals:
 - Local/offline inference
 - Explicit configuration
 - Controlled subprocess execution
+- Backward compatibility
 - Deterministic errors
-- Replaceable backend architecture
+- No automatic downloads
+- No network access
 """
-
 
 from pathlib import Path
 import subprocess
@@ -52,15 +30,6 @@ class WhisperCLIBackend:
     ):
         """
         Initialize the local whisper.cpp backend.
-
-        executable_path:
-            Path to the whisper.cpp CLI executable.
-
-        model_path:
-            Path to the local Whisper model file.
-
-        timeout_seconds:
-            Maximum allowed inference time.
         """
 
         if not isinstance(
@@ -102,11 +71,13 @@ class WhisperCLIBackend:
                 "timeout_seconds must be greater than zero"
             )
 
-        self.executable_path = Path(
+        # Keep public attributes as strings for
+        # backward compatibility with existing tests.
+        self.executable_path = str(
             executable_path
         )
 
-        self.model_path = Path(
+        self.model_path = str(
             model_path
         )
 
@@ -119,8 +90,13 @@ class WhisperCLIBackend:
         """
 
         return (
-            self.executable_path.is_file()
-            and self.model_path.is_file()
+            Path(
+                self.executable_path
+            ).is_file()
+            and
+            Path(
+                self.model_path
+            ).is_file()
         )
 
     def transcribe(self, audio_file):
@@ -146,12 +122,20 @@ class WhisperCLIBackend:
             audio_file
         )
 
-        if not self.executable_path.is_file():
+        executable = Path(
+            self.executable_path
+        )
+
+        if not executable.is_file():
             raise FileNotFoundError(
                 "whisper_cli_executable_not_found"
             )
 
-        if not self.model_path.is_file():
+        model = Path(
+            self.model_path
+        )
+
+        if not model.is_file():
             raise FileNotFoundError(
                 "whisper_model_not_found"
             )
@@ -161,9 +145,9 @@ class WhisperCLIBackend:
         )
 
         command = [
-            str(self.executable_path),
+            str(executable),
             "-m",
-            str(self.model_path),
+            str(model),
             "-f",
             str(audio_path),
             "-nt",
@@ -252,12 +236,6 @@ class WhisperCLIBackend:
         """
         Extract transcription text from
         whisper.cpp CLI output.
-
-        Removes timestamp prefixes such as:
-
-            [00:00:00.000 --> 00:00:02.000]
-
-        while preserving normal text.
         """
 
         if not isinstance(
