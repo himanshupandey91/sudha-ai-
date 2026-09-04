@@ -1,20 +1,25 @@
 """
 Sudha AI - Whisper Speech Recognition Backend
 
-Version 0.1
+Version 0.2
 
-Architecture adapter for a future Whisper-based
+Architecture adapter for a future local Whisper-based
 Speech-to-Text implementation.
 
-This module intentionally does NOT load a Whisper
-model yet.
+Version 0.2:
+- Adds explicit model configuration state.
+- Supports configurable model path.
+- Preserves the SpeechBackend contract.
+- Does not download or load external models.
+- Keeps inference isolated from the rest of Sudha AI.
 
 Design goals:
-- Keep Whisper integration isolated
-- Preserve the SpeechBackend contract
-- Validate audio input
-- Avoid external side effects
-- Make future model integration testable
+- Local/offline architecture
+- Replaceable backend
+- Explicit configuration
+- Deterministic testing
+- No automatic downloads
+- No external side effects
 """
 
 from core.speech_backend import SpeechBackend
@@ -22,26 +27,50 @@ from core.speech_backend import SpeechBackend
 
 class WhisperSpeechBackend(SpeechBackend):
 
-    def __init__(self, model=None):
+    def __init__(
+        self,
+        model=None,
+        model_path=None
+    ):
         """
         Initialize the Whisper backend.
 
         model:
-            Future Whisper model instance.
+            Optional already-loaded Whisper model.
 
-            None means that the real Whisper model
-            has not been configured yet.
+        model_path:
+            Optional path identifying the local
+            Whisper model configuration.
+
+        The backend does not automatically download
+        or load a model.
         """
 
+        if model_path is not None:
+            if not isinstance(model_path, str):
+                raise TypeError(
+                    "model_path must be a string"
+                )
+
+            if model_path.strip() == "":
+                raise ValueError(
+                    "model_path cannot be empty"
+                )
+
         self.model = model
+        self.model_path = model_path
+
+    def is_configured(self):
+        """
+        Return whether a Whisper model is configured.
+        """
+
+        return self.model is not None
 
     def transcribe(self, audio_data):
         """
         Transcribe audio data using the configured
         Whisper model.
-
-        The actual Whisper inference will be added
-        in a later step.
         """
 
         if not isinstance(
