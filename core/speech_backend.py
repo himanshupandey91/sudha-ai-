@@ -1,75 +1,70 @@
 """
-Sudha AI - Speech Recognition Backend
-
-Version 0.2
-
-Defines the backend interface used by the
-Speech Recognition Layer.
-
-Version 0.2:
-- Provides a controlled backend contract.
-- Provides a deterministic backend for testing.
-- Avoids pytest test-class name collisions.
-
-Design goals:
-- Replaceable backend architecture
-- Explicit validation
-- Deterministic testing
-- No external side effects
+Tests for Sudha AI Speech Recognition Backend.
 """
 
+import pytest
 
-class SpeechBackend:
+from core.speech_backend import (
+    SpeechBackend,
+    DeterministicSpeechBackend
+)
 
-    def transcribe(self, audio_data):
-        """
-        Transcribe audio data.
 
-        Real speech-recognition backends
-        must implement this method.
-        """
+def test_base_backend_requires_transcribe():
+    backend = SpeechBackend()
 
-        raise NotImplementedError(
-            "Speech backend must implement transcribe()"
+    with pytest.raises(NotImplementedError):
+        backend.transcribe(b"audio-data")
+
+
+def test_deterministic_backend_returns_text():
+    backend = DeterministicSpeechBackend(
+        text="Hello Sudha"
+    )
+
+    result = backend.transcribe(
+        b"audio-data"
+    )
+
+    assert result == "Hello Sudha"
+
+
+def test_deterministic_backend_accepts_bytearray():
+    backend = DeterministicSpeechBackend(
+        text="Hello Sudha"
+    )
+
+    result = backend.transcribe(
+        bytearray(b"audio-data")
+    )
+
+    assert result == "Hello Sudha"
+
+
+def test_deterministic_backend_rejects_non_bytes():
+    backend = DeterministicSpeechBackend(
+        text="Hello Sudha"
+    )
+
+    with pytest.raises(TypeError):
+        backend.transcribe(
+            "audio-data"
         )
 
 
-class DeterministicSpeechBackend(SpeechBackend):
+def test_deterministic_backend_rejects_empty_audio():
+    backend = DeterministicSpeechBackend(
+        text="Hello Sudha"
+    )
 
-    def __init__(self, text=""):
-        """
-        Create a deterministic backend for testing.
+    with pytest.raises(ValueError):
+        backend.transcribe(
+            b""
+        )
 
-        text:
-            Text returned for valid audio.
-        """
 
-        if not isinstance(text, str):
-            raise TypeError(
-                "text must be a string"
-            )
-
-        self.text = text
-
-    def transcribe(self, audio_data):
-        """
-        Return predetermined text.
-
-        This backend is used only to test
-        the speech-recognition architecture.
-        """
-
-        if not isinstance(
-            audio_data,
-            (bytes, bytearray)
-        ):
-            raise TypeError(
-                "audio_data must be bytes or bytearray"
-            )
-
-        if len(audio_data) == 0:
-            raise ValueError(
-                "audio_data cannot be empty"
-            )
-
-        return self.text
+def test_deterministic_backend_requires_string_text():
+    with pytest.raises(TypeError):
+        DeterministicSpeechBackend(
+            text=123
+        )
