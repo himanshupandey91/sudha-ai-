@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Manager
 
-Version 0.6.0
+Version 0.7.0
 
 Controls the experimentation process.
 
@@ -16,7 +16,7 @@ Goal
 → Next Experiment
 → Repeat
 
-Version 0.6.0:
+Version 0.7.0:
 - Interruptible stop control
 - Thread-safe stop signal
 - Maximum experiment safety guard
@@ -31,12 +31,15 @@ Version 0.6.0:
 - Experiment Learning Engine integration
 - Learning history
 - Learned hypothesis performance
+- Statistical hypothesis selection
+- Average-performance based exploitation
 
 Important:
 - Every available hypothesis is explored once first.
 - Every valid evaluation is passed to the learning engine.
 - Selection remains deterministic.
 - The simulation engine remains isolated from external side effects.
+- Historical learning is preserved across runs.
 
 Safety:
 - Explicit stop control
@@ -115,8 +118,8 @@ class ExperimentManager:
             Explore every available hypothesis once.
 
         Phase 2:
-            Select the best evaluated hypothesis
-            and continue exploiting it.
+            Select the best hypothesis using learned
+            historical performance and continue exploiting it.
 
         The loop stops when:
 
@@ -298,6 +301,10 @@ class ExperimentManager:
     def get_status(self):
         """
         Return the current experiment status.
+
+        The reported best hypothesis uses the same
+        statistical selection policy used by the
+        experimentation loop.
         """
 
         return {
@@ -315,7 +322,7 @@ class ExperimentManager:
                 "records": self.learning_engine.retrieve_all(),
                 "record_count": self.learning_engine.size(),
                 "best_hypothesis": (
-                    self.learning_engine.best_hypothesis()
+                    self.learning_engine.select_best_hypothesis()
                 ),
                 "hypothesis_performance": (
                     self.learning_engine.hypothesis_performance()
@@ -326,13 +333,17 @@ class ExperimentManager:
     def get_learning_status(self):
         """
         Return the current learning state.
+
+        The selected hypothesis is determined using
+        statistical performance rather than only the
+        single best historical experiment.
         """
 
         return {
             "records": self.learning_engine.retrieve_all(),
             "record_count": self.learning_engine.size(),
             "best_hypothesis": (
-                self.learning_engine.best_hypothesis()
+                self.learning_engine.select_best_hypothesis()
             ),
             "hypothesis_performance": (
                 self.learning_engine.hypothesis_performance()
@@ -366,21 +377,28 @@ class ExperimentManager:
         """
         Select the next hypothesis.
 
-        Exploration phase:
+        Phase 1 - Exploration:
             Select the first hypothesis that has
             not been tested yet in this run.
 
-        Exploitation phase:
-            Prefer the best hypothesis learned
-            across all completed experiments.
+        Phase 2 - Exploitation:
+            Select the hypothesis with the best
+            learned historical performance.
+
+            The ExperimentLearningEngine determines
+            the selection using:
+
+            1. Lowest average predicted difference.
+            2. If tied, lowest best predicted difference.
+            3. If still tied, earliest hypothesis encountered.
 
         Fallback:
             Use the best evaluation from the
             current run.
 
-        This allows learning to influence
-        future experimentation while keeping
-        the selection deterministic.
+        This allows historical learning to influence
+        future experimentation while preserving
+        deterministic exploration.
         """
 
         if not isinstance(hypotheses, list):
@@ -388,6 +406,10 @@ class ExperimentManager:
 
         if not hypotheses:
             return None
+
+        # -------------------------------------------------
+        # Phase 1: Explore every unseen hypothesis first.
+        # -------------------------------------------------
 
         for hypothesis_data in hypotheses:
 
@@ -398,8 +420,12 @@ class ExperimentManager:
             if hypothesis not in self.explored_hypotheses:
                 return hypothesis_data
 
+        # -------------------------------------------------
+        # Phase 2: Use learned statistical performance.
+        # -------------------------------------------------
+
         learned_best = (
-            self.learning_engine.best_hypothesis()
+            self.learning_engine.select_best_hypothesis()
         )
 
         if learned_best is not None:
@@ -411,6 +437,10 @@ class ExperimentManager:
                 ) == learned_best:
 
                     return hypothesis_data
+
+        # -------------------------------------------------
+        # Fallback: Use the best result from this run.
+        # -------------------------------------------------
 
         if self.best_evaluation is not None:
 
