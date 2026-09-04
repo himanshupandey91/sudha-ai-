@@ -1,15 +1,15 @@
 """
 Sudha AI - Speech Recognition Backend
 
-Version 0.1
+Version 0.2
 
 Defines the backend interface used by the
 Speech Recognition Layer.
 
-Version 0.1:
+Version 0.2:
 - Provides a controlled backend contract.
-- Provides a deterministic test backend.
-- Does NOT yet load a real speech model.
+- Provides a deterministic backend for testing.
+- Avoids pytest test-class name collisions.
 
 Design goals:
 - Replaceable backend architecture
@@ -25,8 +25,8 @@ class SpeechBackend:
         """
         Transcribe audio data.
 
-        Subclasses or real speech-recognition
-        backends must implement this method.
+        Real speech-recognition backends
+        must implement this method.
         """
 
         raise NotImplementedError(
@@ -34,14 +34,14 @@ class SpeechBackend:
         )
 
 
-class TestSpeechBackend(SpeechBackend):
+class DeterministicSpeechBackend(SpeechBackend):
 
     def __init__(self, text=""):
         """
         Create a deterministic backend for testing.
 
         text:
-            Text that will be returned for valid audio.
+            Text returned for valid audio.
         """
 
         if not isinstance(text, str):
@@ -55,7 +55,7 @@ class TestSpeechBackend(SpeechBackend):
         """
         Return predetermined text.
 
-        This backend exists only for testing
+        This backend is used only to test
         the speech-recognition architecture.
         """
 
