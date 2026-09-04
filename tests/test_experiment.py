@@ -234,6 +234,12 @@ def test_manager_selects_learned_best_hypothesis():
         "score": -1
     })
 
+    manager.explored_hypotheses = [
+        "use_recent_experience",
+        "increase_observation_frequency",
+        "change_prediction_strategy"
+    ]
+
     hypotheses = manager.hypothesis_engine.generate({
         "goal": "reduce_prediction_error"
     })
