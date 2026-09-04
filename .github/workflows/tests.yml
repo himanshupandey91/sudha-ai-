@@ -17,10 +17,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check CMake
+        run: cmake --version
+
       - name: Install pytest
         run: pip install pytest
 
-      - name: Run tests
+      - name: Run Python tests
         run: python -m pytest
         env:
           PYTHONPATH: .
+
+      - name: Build whisper.cpp
+        run: bash scripts/build_whisper.sh
