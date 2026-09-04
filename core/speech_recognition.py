@@ -1,21 +1,28 @@
 """
 Sudha AI - Speech Recognition Layer
 
-Version 0.1
+Version 0.2
 
-Provides a controlled interface between audio input
-and speech-to-text processing.
+Connects the Speech Recognition Layer with
+a replaceable Speech Backend.
 
-Version 0.1:
-- Validates audio input.
-- Provides a speech-to-text interface.
-- Does NOT yet connect to a real STT model.
+Flow:
+
+Audio Data
+    ↓
+Validation
+    ↓
+Speech Backend
+    ↓
+Transcribed Text
+    ↓
+Structured Result
 
 Design goals:
-- Clean architecture
+- Replaceable backend architecture
 - Explicit validation
+- Backend contract enforcement
 - Deterministic behavior
-- Replaceable STT backend
 - No external side effects
 - Fully testable
 """
@@ -38,26 +45,16 @@ class SpeechRecognitionEngine:
 
     def recognize(self, audio_data):
         """
-        Convert audio data into text.
+        Convert audio data into text through
+        the configured speech backend.
         """
 
-        if audio_data is None:
-            return {
-                "status": "rejected",
-                "reason": "audio_data_cannot_be_none"
-            }
+        validation = self._validate_audio(
+            audio_data
+        )
 
-        if not isinstance(audio_data, (bytes, bytearray)):
-            return {
-                "status": "rejected",
-                "reason": "audio_data_must_be_bytes"
-            }
-
-        if len(audio_data) == 0:
-            return {
-                "status": "rejected",
-                "reason": "audio_data_cannot_be_empty"
-            }
+        if validation is not None:
+            return validation
 
         if self.backend is None:
             return {
@@ -77,11 +74,19 @@ class SpeechRecognitionEngine:
                 "reason": "invalid_speech_recognition_backend"
             }
 
-        result = transcribe(
-            bytes(audio_data)
-        )
+        try:
+            text = transcribe(
+                bytes(audio_data)
+            )
 
-        if not isinstance(result, str):
+        except Exception as error:
+            return {
+                "status": "failed",
+                "reason": "speech_recognition_backend_error",
+                "error": str(error)
+            }
+
+        if not isinstance(text, str):
             return {
                 "status": "rejected",
                 "reason": "speech_recognition_backend_must_return_text"
@@ -89,5 +94,36 @@ class SpeechRecognitionEngine:
 
         return {
             "status": "recognized",
-            "text": result
+            "text": text
         }
+
+    def _validate_audio(self, audio_data):
+        """
+        Validate raw audio input.
+
+        Returns:
+            Rejection result or None when valid.
+        """
+
+        if audio_data is None:
+            return {
+                "status": "rejected",
+                "reason": "audio_data_cannot_be_none"
+            }
+
+        if not isinstance(
+            audio_data,
+            (bytes, bytearray)
+        ):
+            return {
+                "status": "rejected",
+                "reason": "audio_data_must_be_bytes"
+            }
+
+        if len(audio_data) == 0:
+            return {
+                "status": "rejected",
+                "reason": "audio_data_cannot_be_empty"
+            }
+
+        return None
