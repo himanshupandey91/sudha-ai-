@@ -30,3 +30,13 @@ jobs:
 
       - name: Build whisper.cpp
         run: bash scripts/build_whisper.sh
+
+      - name: Download Whisper model
+        working-directory: whisper.cpp
+        run: bash ./models/download-ggml-model.sh tiny.en
+
+      - name: Verify Whisper model
+        working-directory: whisper.cpp
+        run: |
+          test -f models/ggml-tiny.en.bin
+          ls -lh models/ggml-tiny.en.bin
