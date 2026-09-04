@@ -1,12 +1,14 @@
 """
 Tests for Sudha AI Experiment Manager.
 
-Step 29-B
+Step 30
 
 Focus:
 - Experiment execution
 - Hypothesis exploration
 - Learning-based selection
+- Statistical selection
+- Average-performance based decision making
 - Best-result tracking
 - Stop control
 """
@@ -247,6 +249,77 @@ def test_manager_selects_learned_best_hypothesis():
     selected = manager._select_hypothesis(
         hypotheses
     )
+
+    assert selected["hypothesis"] == (
+        "change_prediction_strategy"
+    )
+
+
+def test_manager_uses_average_performance_for_selection():
+    manager = create_manager_with_learning(
+        max_experiments=5
+    )
+
+    # Hypothesis A:
+    # One excellent result, one poor result.
+    #
+    # Average = (1 + 9) / 2 = 5
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "use_recent_experience",
+        "predicted_difference": 1,
+        "score": -1
+    })
+
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "use_recent_experience",
+        "predicted_difference": 9,
+        "score": -9
+    })
+
+    # Hypothesis B:
+    # Two consistently good results.
+    #
+    # Average = (4 + 4) / 2 = 4
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "change_prediction_strategy",
+        "predicted_difference": 4,
+        "score": -4
+    })
+
+    manager.learning_engine.learn({
+        "status": "evaluated",
+        "hypothesis": "change_prediction_strategy",
+        "predicted_difference": 4,
+        "score": -4
+    })
+
+    manager.explored_hypotheses = [
+        "use_recent_experience",
+        "increase_observation_frequency",
+        "change_prediction_strategy"
+    ]
+
+    hypotheses = manager.hypothesis_engine.generate({
+        "goal": "reduce_prediction_error"
+    })
+
+    selected = manager._select_hypothesis(
+        hypotheses
+    )
+
+    # The old best_hypothesis() method would select
+    # use_recent_experience because it has a single
+    # result of 1.
+    #
+    # The new statistical policy must select
+    # change_prediction_strategy because its
+    # average performance is better:
+    #
+    # A average = 5
+    # B average = 4
 
     assert selected["hypothesis"] == (
         "change_prediction_strategy"
