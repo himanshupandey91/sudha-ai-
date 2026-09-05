@@ -1,24 +1,26 @@
 """
 Sudha AI - Main Cognitive Pipeline
 
-Version 0.3
+Version 0.4
 
 Current pipeline:
 
-Input
+Multimodal Input
   ↓
 Perception
   ↓
 Unified Observation
   ↓
 Prediction
+  ↓
+Actual Outcome
+  ↓
+Difference
 
-Difference calculation is kept separate because
-it requires both:
-    prediction
-    actual outcome
-
-No fake actual outcome is generated.
+Important:
+- No fake actual outcome is generated.
+- Difference is calculated only when a real
+  actual outcome is explicitly provided.
 """
 
 from core.perception import PerceptionEngine
@@ -110,8 +112,8 @@ class SudhaAI:
         """
         Compare a prediction with the actual outcome.
 
-        This is the point where real prediction
-        error can be measured.
+        This method is only called when an actual
+        outcome is explicitly provided.
         """
 
         difference = self.difference.calculate(
@@ -134,7 +136,9 @@ class SudhaAI:
         video=None
     ):
         """
-        Run one complete observation → prediction cycle.
+        Run one observation → prediction cycle.
+
+        No actual outcome is generated here.
         """
 
         observation = self.observe(
@@ -155,4 +159,60 @@ class SudhaAI:
             "status": "completed",
             "observation": observation,
             "prediction": prediction
+        }
+
+    def run_with_actual(
+        self,
+        actual,
+        text=None,
+        voice=None,
+        image=None,
+        video=None
+    ):
+        """
+        Run a complete prediction → comparison cycle.
+
+        Flow:
+
+        Input
+          ↓
+        Observation
+          ↓
+        Prediction
+          ↓
+        Actual Outcome
+          ↓
+        Difference
+
+        The actual outcome must be supplied
+        explicitly by the caller.
+        """
+
+        observation = self.observe(
+            text=text,
+            voice=voice,
+            image=image,
+            video=video
+        )
+
+        if observation["status"] != "observation_created":
+            return observation
+
+        prediction = self.predict(
+            observation
+        )
+
+        if prediction["status"] != "predicted":
+            return prediction
+
+        comparison = self.compare(
+            prediction["prediction"],
+            actual
+        )
+
+        return {
+            "status": "completed",
+            "observation": observation,
+            "prediction": prediction,
+            "comparison": comparison
         }
