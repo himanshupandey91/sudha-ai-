@@ -1,36 +1,158 @@
 """
-Sudha AI
-Version: 0.1
+Sudha AI - Main Cognitive Pipeline
 
-Initial research prototype.
+Version 0.3
+
+Current pipeline:
+
+Input
+  ↓
+Perception
+  ↓
+Unified Observation
+  ↓
+Prediction
+
+Difference calculation is kept separate because
+it requires both:
+    prediction
+    actual outcome
+
+No fake actual outcome is generated.
 """
+
+from core.perception import PerceptionEngine
+from core.prediction import PredictionEngine
+from core.difference import DifferenceEngine
 
 
 class SudhaAI:
-    def __init__(self):
-        self.memory = []
 
-    def observe(self, input_data):
-        """Receive an observation."""
-        return input_data
+    def __init__(
+        self,
+        perception=None,
+        prediction=None,
+        difference=None
+    ):
+        """
+        Initialize the core cognitive components.
+        """
 
-    def remember(self, information):
-        """Store information in memory."""
-        self.memory.append(information)
+        self.perception = (
+            perception
+            if perception is not None
+            else PerceptionEngine()
+        )
 
-    def run(self, input_data):
-        observation = self.observe(input_data)
-        self.remember(observation)
+        self.prediction = (
+            prediction
+            if prediction is not None
+            else PredictionEngine()
+        )
+
+        self.difference = (
+            difference
+            if difference is not None
+            else DifferenceEngine()
+        )
+
+    def observe(
+        self,
+        text=None,
+        voice=None,
+        image=None,
+        video=None
+    ):
+        """
+        Create a unified multimodal observation.
+        """
+
+        return self.perception.create_multimodal_observation(
+            text=text,
+            voice=voice,
+            image=image,
+            video=video
+        )
+
+    def predict(self, observation):
+        """
+        Generate a prediction from an observation.
+        """
+
+        if not isinstance(observation, dict):
+            return {
+                "status": "rejected",
+                "reason": "observation_must_be_a_dictionary"
+            }
+
+        if observation.get("status") != "observation_created":
+            return {
+                "status": "rejected",
+                "reason": "invalid_observation"
+            }
+
+        data = observation.get("data")
+
+        prediction = self.prediction.predict(
+            data
+        )
 
         return {
-            "observation": observation,
-            "memory_size": len(self.memory)
+            "status": "predicted",
+            "prediction": prediction
         }
 
+    def compare(
+        self,
+        prediction,
+        actual
+    ):
+        """
+        Compare a prediction with the actual outcome.
 
-if __name__ == "__main__":
-    ai = SudhaAI()
+        This is the point where real prediction
+        error can be measured.
+        """
 
-    result = ai.run("Hello, Sudha AI")
+        difference = self.difference.calculate(
+            prediction,
+            actual
+        )
 
-    print(result)
+        return {
+            "status": "compared",
+            "prediction": prediction,
+            "actual": actual,
+            "difference": difference
+        }
+
+    def run(
+        self,
+        text=None,
+        voice=None,
+        image=None,
+        video=None
+    ):
+        """
+        Run one complete observation → prediction cycle.
+        """
+
+        observation = self.observe(
+            text=text,
+            voice=voice,
+            image=image,
+            video=video
+        )
+
+        if observation["status"] != "observation_created":
+            return observation
+
+        prediction = self.predict(
+            observation
+        )
+
+        return {
+            "status": "completed",
+            "observation": observation,
+            "prediction": prediction
+        }
