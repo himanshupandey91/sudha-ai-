@@ -79,7 +79,7 @@ class CameraEngine:
         if callable(is_open):
             return bool(is_open())
 
-        return False
+        return True
 
     def attach_camera(self, camera):
         """
@@ -231,5 +231,5 @@ class CameraEngine:
         configuration["camera_open"] = (
             self.is_open()
         )
-        
+
         return configuration
