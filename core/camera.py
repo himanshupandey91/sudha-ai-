@@ -231,9 +231,5 @@ class CameraEngine:
         configuration["camera_open"] = (
             self.is_open()
         )
-
-        configuration["camera_attached"] = (
-            self._camera is not None
-        )
-
+        
         return configuration
