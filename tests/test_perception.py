@@ -1,33 +1,20 @@
-"""
-Sudha AI - Multimodal Perception Tests
-
-Version 0.2
-
-Tests unified multimodal observation
-creation inside the Perception Layer.
-"""
-
 from core.perception import PerceptionEngine
 
 
-def create_engine():
-    return PerceptionEngine()
-
-
 def test_text_perception():
-    engine = create_engine()
+    engine = PerceptionEngine()
 
     result = engine.perceive_text(
-        "hello sudha"
+        "Hello Sudha"
     )
 
     assert result["status"] == "perceived"
     assert result["modality"] == "text"
-    assert result["data"] == "hello sudha"
+    assert result["data"] == "Hello Sudha"
 
 
 def test_voice_perception():
-    engine = create_engine()
+    engine = PerceptionEngine()
 
     audio = b"voice-data"
 
@@ -41,7 +28,7 @@ def test_voice_perception():
 
 
 def test_image_perception():
-    engine = create_engine()
+    engine = PerceptionEngine()
 
     image = b"image-data"
 
@@ -55,7 +42,7 @@ def test_image_perception():
 
 
 def test_video_perception():
-    engine = create_engine()
+    engine = PerceptionEngine()
 
     video = b"video-data"
 
@@ -68,11 +55,11 @@ def test_video_perception():
     assert result["data"] == video
 
 
-def test_create_observation_with_text():
-    engine = create_engine()
+def test_single_observation():
+    engine = PerceptionEngine()
 
     text = engine.perceive_text(
-        "hello"
+        "Hello"
     )
 
     result = engine.create_observation(
@@ -81,15 +68,15 @@ def test_create_observation_with_text():
 
     assert result["status"] == "observation_created"
     assert result["modalities"] == ["text"]
-    assert result["data"]["text"] == "hello"
     assert result["count"] == 1
+    assert result["data"]["text"] == "Hello"
 
 
-def test_create_multimodal_observation():
-    engine = create_engine()
+def test_full_multimodal_observation():
+    engine = PerceptionEngine()
 
     result = engine.create_multimodal_observation(
-        text="hello",
+        text="Hello",
         voice=b"voice",
         image=b"image",
         video=b"video"
@@ -104,47 +91,44 @@ def test_create_multimodal_observation():
         "video"
     ]
 
-    assert result["data"]["text"] == "hello"
+    assert result["count"] == 4
+
+    assert result["data"]["text"] == "Hello"
     assert result["data"]["voice"] == b"voice"
     assert result["data"]["image"] == b"image"
     assert result["data"]["video"] == b"video"
 
-    assert result["count"] == 4
 
-
-def test_multimodal_observation_with_only_text():
-    engine = create_engine()
+def test_text_only_multimodal_observation():
+    engine = PerceptionEngine()
 
     result = engine.create_multimodal_observation(
-        text="only text"
+        text="Hello"
     )
 
     assert result["status"] == "observation_created"
     assert result["modalities"] == ["text"]
-    assert result["data"]["text"] == "only text"
     assert result["count"] == 1
 
 
-def test_multimodal_observation_with_text_and_voice():
-    engine = create_engine()
+def test_text_and_voice_observation():
+    engine = PerceptionEngine()
 
     result = engine.create_multimodal_observation(
-        text="hello",
-        voice=b"audio"
+        text="Hello",
+        voice=b"voice"
     )
 
     assert result["status"] == "observation_created"
-
     assert result["modalities"] == [
         "text",
         "voice"
     ]
-
     assert result["count"] == 2
 
 
-def test_empty_multimodal_observation_is_rejected():
-    engine = create_engine()
+def test_empty_multimodal_observation_rejected():
+    engine = PerceptionEngine()
 
     result = engine.create_multimodal_observation()
 
@@ -154,11 +138,11 @@ def test_empty_multimodal_observation_is_rejected():
     )
 
 
-def test_observation_requires_list():
-    engine = create_engine()
+def test_non_list_observation_rejected():
+    engine = PerceptionEngine()
 
     result = engine.create_observation(
-        "not-a-list"
+        "invalid"
     )
 
     assert result["status"] == "rejected"
@@ -167,10 +151,12 @@ def test_observation_requires_list():
     )
 
 
-def test_observation_rejects_empty_list():
-    engine = create_engine()
+def test_empty_observation_rejected():
+    engine = PerceptionEngine()
 
-    result = engine.create_observation([])
+    result = engine.create_observation(
+        []
+    )
 
     assert result["status"] == "rejected"
     assert result["reason"] == (
@@ -178,8 +164,8 @@ def test_observation_rejects_empty_list():
     )
 
 
-def test_observation_rejects_non_dictionary():
-    engine = create_engine()
+def test_non_dictionary_perception_rejected():
+    engine = PerceptionEngine()
 
     result = engine.create_observation(
         ["invalid"]
@@ -191,17 +177,15 @@ def test_observation_rejects_non_dictionary():
     )
 
 
-def test_observation_rejects_invalid_perception():
-    engine = create_engine()
+def test_invalid_perception_rejected():
+    engine = PerceptionEngine()
 
     result = engine.create_observation(
-        [
-            {
-                "status": "rejected",
-                "modality": "text",
-                "data": "bad"
-            }
-        ]
+        [{
+            "status": "rejected",
+            "modality": "text",
+            "data": "hello"
+        }]
     )
 
     assert result["status"] == "rejected"
@@ -210,16 +194,14 @@ def test_observation_rejects_invalid_perception():
     )
 
 
-def test_observation_rejects_missing_data():
-    engine = create_engine()
+def test_missing_perception_data_rejected():
+    engine = PerceptionEngine()
 
     result = engine.create_observation(
-        [
-            {
-                "status": "perceived",
-                "modality": "text"
-            }
-        ]
+        [{
+            "status": "perceived",
+            "modality": "text"
+        }]
     )
 
     assert result["status"] == "rejected"
@@ -228,25 +210,31 @@ def test_observation_rejects_missing_data():
     )
 
 
-def test_observation_preserves_multiple_modalities():
-    engine = create_engine()
+def test_multiple_modalities_are_preserved():
+    engine = PerceptionEngine()
 
-    perceptions = [
-        engine.perceive_text("hello"),
-        engine.perceive_image(b"image"),
-        engine.perceive_video(b"video")
-    ]
+    text = engine.perceive_text(
+        "What is this?"
+    )
+
+    image = engine.perceive_image(
+        b"camera-frame"
+    )
 
     result = engine.create_observation(
-        perceptions
+        [text, image]
     )
 
     assert result["status"] == "observation_created"
-
     assert result["modalities"] == [
         "text",
-        "image",
-        "video"
+        "image"
     ]
 
-    assert result["count"] == 3
+    assert result["data"]["text"] == (
+        "What is this?"
+    )
+
+    assert result["data"]["image"] == (
+        b"camera-frame"
+    )
