@@ -1,14 +1,16 @@
 """
 Sudha AI - Camera Capture Foundation
 
-Version 0.1
+Version 0.2
 
 Provides a controlled abstraction for real camera capture.
 
 Design goals:
 - Camera device abstraction
-- Explicit configuration
+- OpenCV adapter integration
+- Explicit camera opening
 - Safe frame capture
+- Explicit release
 - No automatic camera access during import
 - Testable architecture
 - No network access
@@ -25,12 +27,19 @@ class CameraEngine:
         camera_index=0,
         width=640,
         height=480,
-        fps=30
+        fps=30,
+        camera_adapter=None
     ):
         """
         Initialize the camera engine.
 
         The camera is NOT opened during initialization.
+
+        camera_adapter:
+            Optional camera adapter providing:
+                open()
+                read()
+                release()
         """
 
         if not isinstance(camera_index, int):
@@ -51,14 +60,26 @@ class CameraEngine:
             fps=fps
         )
 
-        self._camera = None
+        self._camera = camera_adapter
 
     def is_open(self):
         """
         Return whether a camera device is currently open.
         """
 
-        return self._camera is not None
+        if self._camera is None:
+            return False
+
+        is_open = getattr(
+            self._camera,
+            "is_open",
+            None
+        )
+
+        if callable(is_open):
+            return bool(is_open())
+
+        return False
 
     def attach_camera(self, camera):
         """
@@ -67,8 +88,10 @@ class CameraEngine:
         The object must provide:
             read()
 
-        This abstraction allows real camera hardware
-        and fake cameras to use the same interface.
+        Optional:
+            open()
+            release()
+            is_open()
         """
 
         if camera is None:
@@ -88,6 +111,46 @@ class CameraEngine:
             )
 
         self._camera = camera
+
+    def open(self):
+        """
+        Open the attached camera.
+
+        If the adapter does not provide open(),
+        the engine assumes the camera is already usable.
+        """
+
+        if self._camera is None:
+            return {
+                "status": "unavailable",
+                "reason": "camera_not_attached"
+            }
+
+        open_camera = getattr(
+            self._camera,
+            "open",
+            None
+        )
+
+        if not callable(open_camera):
+            return {
+                "status": "ready",
+                "reason": "camera_open_method_not_required"
+            }
+
+        try:
+            open_camera()
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "reason": "camera_open_failed",
+                "error": str(error)
+            }
+
+        return {
+            "status": "ready"
+        }
 
     def capture_frame(
         self,
@@ -167,6 +230,10 @@ class CameraEngine:
 
         configuration["camera_open"] = (
             self.is_open()
+        )
+
+        configuration["camera_attached"] = (
+            self._camera is not None
         )
 
         return configuration
