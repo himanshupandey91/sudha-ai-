@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Cognitive Cycle
 
-Version 0.2
+Version 0.3
 
 Adaptive reasoning cycle:
 
@@ -25,13 +25,20 @@ Memory
     ↓
 World Model
     ↓
+Hypothesis Update
+    ↓
 Next Cycle
 
-The controller supports both:
+The controller supports:
+- CognitiveExperimentEngine.run_cycle(goal, observation)
 - reason(goal, context)
 - reason(goal)
 
-No fake experiment result is generated here.
+Safety:
+- bounded cycles
+- explicit stop()
+- no uncontrolled infinite loop
+- no fake experiment result generation
 """
 
 class AdaptiveCognitiveCycle:
@@ -68,11 +75,42 @@ class AdaptiveCognitiveCycle:
     def clear_history(self):
         self.history.clear()
 
+    def _extract_observation(self, context):
+        """
+        Extract the observation used by the real
+        cognitive experiment cycle.
+
+        Supported forms:
+
+        context = {
+            "observation": {...}
+        }
+
+        or:
+
+        context = {
+            ...
+        }
+
+        In the second form the complete context is
+        treated as the observation.
+        """
+
+        if not isinstance(context, dict):
+            return context
+
+        if "observation" in context:
+            return context["observation"]
+
+        return context
+
     def _reason(self, goal, context):
         """
-        Call the cognitive experiment engine while
-        supporting both the new two-argument interface
-        and the existing one-argument interface.
+        Backward-compatible reasoning interface.
+
+        Supports:
+        - reason(goal, context)
+        - reason(goal)
         """
 
         reason = getattr(
@@ -92,6 +130,37 @@ class AdaptiveCognitiveCycle:
         except TypeError:
             return reason(goal)
 
+    def _run_real_cycle(self, goal, context):
+        """
+        Execute the real CognitiveExperimentEngine
+        adaptive cycle when run_cycle() is available.
+
+        Expected interface:
+
+            run_cycle(
+                goal_state,
+                observation
+            )
+        """
+
+        run_cycle = getattr(
+            self.cognitive_experiment,
+            "run_cycle",
+            None
+        )
+
+        if not callable(run_cycle):
+            return None
+
+        observation = self._extract_observation(
+            context
+        )
+
+        return run_cycle(
+            goal,
+            observation
+        )
+
     def run_cycle(
         self,
         goal=None,
@@ -99,6 +168,14 @@ class AdaptiveCognitiveCycle:
     ):
         """
         Execute one adaptive cognitive cycle.
+
+        Preferred path:
+            CognitiveExperimentEngine.run_cycle()
+
+        Compatibility path:
+            reason(goal, context)
+            or
+            reason(goal)
         """
 
         if self.stopped:
@@ -113,11 +190,26 @@ class AdaptiveCognitiveCycle:
                 "reason": "cognitive_experiment_not_configured"
             }
 
+        goal = goal or {}
+        context = context or {}
+
         try:
-            result = self._reason(
-                goal or {},
-                context or {}
+            run_cycle = getattr(
+                self.cognitive_experiment,
+                "run_cycle",
+                None
             )
+
+            if callable(run_cycle):
+                result = self._run_real_cycle(
+                    goal,
+                    context
+                )
+            else:
+                result = self._reason(
+                    goal,
+                    context
+                )
 
         except Exception as error:
             return {
@@ -143,6 +235,11 @@ class AdaptiveCognitiveCycle:
     ):
         """
         Run a bounded adaptive cognitive cycle.
+
+        The loop stops when:
+        - max_cycles is reached
+        - stop() is requested
+        - a cycle fails
         """
 
         self.reset()
@@ -202,4 +299,4 @@ class AdaptiveCognitiveCycle:
             "max_cycles": self.max_cycles,
             "stopped": self.stopped,
             "history_size": len(self.history)
-                }
+        }
