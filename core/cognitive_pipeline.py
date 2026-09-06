@@ -1,12 +1,9 @@
 """
 Sudha AI - Cognitive Pipeline
 
-Version 0.1
+Version 0.3
 
-Connects the existing perception and prediction
-components into one controlled cognitive cycle.
-
-Flow:
+Cognitive flow:
 
 Input
   ↓
@@ -19,17 +16,21 @@ Prediction
 Actual Outcome
   ↓
 Difference
+  ↓
+Learning Signal
 
 Important:
-- Does not invent an actual outcome.
-- Does not modify memory yet.
-- Does not perform autonomous external actions.
-- Uses existing Sudha AI components.
+- Actual outcome is never invented.
+- Learning occurs only when an actual outcome is supplied.
+- LearningEngine receives the prediction difference.
+- No autonomous external actions.
+- Components remain replaceable and testable.
 """
 
 from core.perception import PerceptionEngine
 from core.prediction import PredictionEngine
 from core.difference import DifferenceEngine
+from core.learning import LearningEngine
 
 
 class CognitivePipeline:
@@ -38,7 +39,8 @@ class CognitivePipeline:
         self,
         perception=None,
         prediction=None,
-        difference=None
+        difference=None,
+        learning=None
     ):
         """
         Initialize the cognitive pipeline.
@@ -60,6 +62,12 @@ class CognitivePipeline:
             difference
             if difference is not None
             else DifferenceEngine()
+        )
+
+        self.learning = (
+            learning
+            if learning is not None
+            else LearningEngine()
         )
 
     def observe(
@@ -130,6 +138,32 @@ class CognitivePipeline:
             "difference": difference
         }
 
+    def learn(self, difference):
+        """
+        Convert prediction error into a
+        learning signal.
+
+        The existing LearningEngine accepts
+        only the prediction difference.
+        """
+
+        try:
+            result = self.learning.learn(
+                difference
+            )
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "reason": "learning_engine_error",
+                "error": str(error)
+            }
+
+        return {
+            "status": "learned",
+            "result": result
+        }
+
     def run(
         self,
         text=None,
@@ -141,6 +175,7 @@ class CognitivePipeline:
         Run observation → prediction.
 
         No actual outcome is invented.
+        No learning occurs in this method.
         """
 
         observation = self.observe(
@@ -175,7 +210,7 @@ class CognitivePipeline:
         video=None
     ):
         """
-        Run the complete cognitive cycle.
+        Run the complete cognitive learning cycle.
 
         Input
           ↓
@@ -186,26 +221,40 @@ class CognitivePipeline:
         Actual Outcome
           ↓
         Difference
+          ↓
+        Learning Signal
         """
 
-        result = self.run(
+        observation = self.observe(
             text=text,
             voice=voice,
             image=image,
             video=video
         )
 
-        if result["status"] != "predicted":
-            return result
+        if observation["status"] != "observation_created":
+            return observation
+
+        prediction = self.predict(
+            observation
+        )
+
+        if prediction["status"] != "predicted":
+            return prediction
 
         comparison = self.compare(
-            result["prediction"]["prediction"],
+            prediction["prediction"],
             actual
+        )
+
+        learning = self.learn(
+            comparison["difference"]
         )
 
         return {
             "status": "completed",
-            "observation": result["observation"],
-            "prediction": result["prediction"],
-            "comparison": comparison
+            "observation": observation,
+            "prediction": prediction,
+            "comparison": comparison,
+            "learning": learning
         }
