@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.3
+Version 0.4
 
 Connects:
 Goal
@@ -14,7 +14,7 @@ Plan
     ↓
 Selected Hypothesis
     ↓
-Experiment
+ExperimentLoopEngine
     ↓
 Actual Result
     ↓
@@ -26,10 +26,11 @@ Memory
     ↓
 World Model
 
-Version 0.3:
-- Passes the selected hypothesis to experiments that explicitly support it.
-- Preserves compatibility with legacy experiments that only accept observation.
-- Records the selected hypothesis after the experiment result is known.
+Version 0.4:
+- Delegates experiment execution to ExperimentLoopEngine.
+- Passes the selected hypothesis through the experiment-loop boundary.
+- Preserves compatibility with legacy experiments.
+- Records the selected hypothesis after the observed result is known.
 - Does not invent experiment results.
 - Keeps hypothesis attribution explicit.
 - No uncontrolled loops.
@@ -75,74 +76,10 @@ class CognitiveExperimentEngine:
         observation,
         hypothesis=None
     ):
-        if self.experiment_loop.is_stopped():
-            return {
-                "status": "stopped",
-                "reason": "closed_loop_stopped"
-            }
-
-        experiment = self.experiment_loop.experiment
-
-        if experiment is None:
-            return {
-                "status": "unavailable",
-                "reason": "experiment_not_configured"
-            }
-
-        execute = getattr(
-            experiment,
-            "run",
-            None
+        return self.experiment_loop.run_experiment(
+            observation=observation,
+            hypothesis=hypothesis
         )
-
-        if not callable(execute):
-            return {
-                "status": "rejected",
-                "reason": "invalid_experiment"
-            }
-
-        try:
-            if hypothesis is not None:
-                actual = execute(
-                    observation,
-                    hypothesis=hypothesis
-                )
-            else:
-                actual = execute(observation)
-
-        except TypeError:
-            if hypothesis is None:
-                return {
-                    "status": "failed",
-                    "reason": "experiment_execution_failed",
-                    "error": (
-                        "experiment_does_not_support_required_interface"
-                    )
-                }
-
-            try:
-                actual = execute(observation)
-
-            except Exception as error:
-                return {
-                    "status": "failed",
-                    "reason": "experiment_execution_failed",
-                    "error": str(error)
-                }
-
-        except Exception as error:
-            return {
-                "status": "failed",
-                "reason": "experiment_execution_failed",
-                "error": str(error)
-            }
-
-        return {
-            "status": "experiment_completed",
-            "observation": observation,
-            "hypothesis": hypothesis,
-            "actual": actual
-        }
 
     def run_cycle(
         self,
@@ -251,3 +188,4 @@ class CognitiveExperimentEngine:
                 self.experiment_loop
             ).__name__
         }
+    }
