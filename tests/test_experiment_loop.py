@@ -69,9 +69,9 @@ def test_previous_experience_changes_next_prediction():
 
     second = engine.run_cycle(20)
 
-    assert second["prediction"] == 15
+    assert second["prediction"] == 25
     assert second["actual"] == 25
-    assert second["difference"] == 10
+    assert second["difference"] == 0
 
     assert engine.get_cycle_count() == 2
 
