@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.4
+Version 0.4.1
 
 Real adaptive cognitive cycle:
 
@@ -17,16 +17,12 @@ Actual Outcome
  ↓
 Difference
  ↓
-Evaluation
- ↓
 Learning
  ↓
 World Model Update
-
-No fake actual outcome is generated here.
 """
 
-from core.hypothesis_planner import HypothesisPlanner
+from core.hypothesis_planner import hypothesis_planner
 from core.experiment import ExperimentEngine
 from core.world_model import WorldModel
 
@@ -35,14 +31,14 @@ class CognitiveExperimentEngine:
 
     def __init__(
         self,
-        hypothesis_planner=None,
+        hypothesis_planner_engine=None,
         experiment_engine=None,
         world_model=None
     ):
         self.hypothesis_planner = (
-            hypothesis_planner
-            if hypothesis_planner is not None
-            else HypothesisPlanner()
+            hypothesis_planner_engine
+            if hypothesis_planner_engine is not None
+            else hypothesis_planner
         )
 
         self.experiment_engine = (
@@ -60,15 +56,21 @@ class CognitiveExperimentEngine:
         self.history = []
 
     def reason(self, goal_state=None):
-        """
-        Select a hypothesis for the supplied goal.
-        """
-
         goal_state = goal_state or {}
 
-        hypothesis = self.hypothesis_planner.select(
-            goal_state
+        selector = getattr(
+            self.hypothesis_planner,
+            "select",
+            None
         )
+
+        if not callable(selector):
+            return {
+                "status": "unavailable",
+                "reason": "hypothesis_selector_not_available"
+            }
+
+        hypothesis = selector(goal_state)
 
         if hypothesis is None:
             return {
@@ -87,13 +89,6 @@ class CognitiveExperimentEngine:
         observation=None,
         actual=None
     ):
-        """
-        Execute one complete cognitive experiment cycle.
-
-        `actual` must be supplied by the experiment/environment.
-        This engine never invents an actual outcome.
-        """
-
         goal_state = goal_state or {}
         observation = observation or {}
 
@@ -104,10 +99,22 @@ class CognitiveExperimentEngine:
 
         hypothesis = reasoning["hypothesis"]
 
-        prediction = self.hypothesis_planner.predict(
-            hypothesis,
-            observation
+        predictor = getattr(
+            self.hypothesis_planner,
+            "predict",
+            None
         )
+
+        if callable(predictor):
+            prediction = predictor(
+                hypothesis,
+                observation
+            )
+        else:
+            prediction = {
+                "hypothesis": hypothesis,
+                "observation": observation
+            }
 
         if actual is None:
             return {
@@ -117,11 +124,28 @@ class CognitiveExperimentEngine:
                 "prediction": prediction
             }
 
-        experiment_result = self.experiment_engine.run(
-            hypothesis=hypothesis,
-            prediction=prediction,
-            actual=actual
+        runner = getattr(
+            self.experiment_engine,
+            "run",
+            None
         )
+
+        if not callable(runner):
+            return {
+                "status": "failed",
+                "reason": "experiment_runner_not_available"
+            }
+
+        try:
+            experiment_result = runner(
+                hypothesis=hypothesis,
+                prediction=prediction,
+                actual=actual
+            )
+        except TypeError:
+            experiment_result = runner(
+                actual=actual
+            )
 
         if not isinstance(experiment_result, dict):
             return {
@@ -129,9 +153,7 @@ class CognitiveExperimentEngine:
                 "reason": "invalid_experiment_result"
             }
 
-        difference = experiment_result.get(
-            "difference"
-        )
+        difference = experiment_result.get("difference")
 
         if difference is None:
             return {
@@ -139,15 +161,41 @@ class CognitiveExperimentEngine:
                 "reason": "experiment_difference_missing"
             }
 
-        self.hypothesis_planner.record_result(
-            hypothesis,
-            difference
+        recorder = getattr(
+            self.hypothesis_planner,
+            "record_result",
+            None
         )
 
-        self.world_model.update(
-            prediction=prediction,
-            actual=actual,
-            difference=difference
+        if callable(recorder):
+            recorder(
+                hypothesis,
+                difference
+            )
+
+        updater = getattr(
+            self.world_model,
+            "update",
+            None
+        )
+
+        if callable(updater):
+            updater(
+                prediction=prediction,
+                actual=actual,
+                difference=difference
+            )
+
+        state_getter = getattr(
+            self.world_model,
+            "get_state",
+            None
+        )
+
+        world_state = (
+            state_getter()
+            if callable(state_getter)
+            else {}
         )
 
         result = {
@@ -157,7 +205,7 @@ class CognitiveExperimentEngine:
             "actual": actual,
             "difference": difference,
             "experiment": experiment_result,
-            "world_model": self.world_model.get_state()
+            "world_model": world_state
         }
 
         self.history.append(result)
