@@ -1,13 +1,15 @@
 """
 Sudha AI - Cognitive Loop
 
-Version 0.1
+Version 0.2
 
-Closed cognitive cycle:
+Closed adaptive cognitive cycle:
 
 Observation
     ↓
 Prediction
+    ↓
+Hypothesis / Experiment Engine
     ↓
 Actual Outcome
     ↓
@@ -22,6 +24,7 @@ Safety:
 - explicit stop()
 - no uncontrolled infinite loop
 - no external side effects
+- backward compatible with the existing pipeline API
 """
 
 from threading import Event
@@ -34,6 +37,7 @@ class CognitiveLoop:
     def __init__(
         self,
         pipeline=None,
+        experiment_engine=None,
         max_cycles=10
     ):
         self.pipeline = (
@@ -41,6 +45,8 @@ class CognitiveLoop:
             if pipeline is not None
             else CognitivePipeline()
         )
+
+        self.experiment_engine = experiment_engine
 
         if not isinstance(max_cycles, int):
             raise ValueError("max_cycles must be an integer")
@@ -54,7 +60,7 @@ class CognitiveLoop:
 
     def stop(self):
         """
-        Immediately request the loop to stop.
+        Request the loop to stop.
         """
         self.stop_event.set()
 
@@ -80,6 +86,17 @@ class CognitiveLoop:
     ):
         """
         Execute one complete cognitive cycle.
+
+        Existing behavior is preserved:
+            Observation
+                ↓
+            Prediction
+                ↓
+            Actual
+                ↓
+            Difference
+                ↓
+            Learning
         """
 
         if self.is_stopped():
@@ -110,6 +127,8 @@ class CognitiveLoop:
     ):
         """
         Run bounded repeated cognitive cycles.
+
+        The existing pipeline remains the default execution path.
 
         The loop stops when:
         1. max_cycles is reached
@@ -156,12 +175,90 @@ class CognitiveLoop:
             "results": results
         }
 
+    def run_experiment_cycle(
+        self,
+        goal=None,
+        context=None
+    ):
+        """
+        Execute one cycle through an external
+        CognitiveExperimentEngine.
+
+        This method is intentionally separate from
+        run_cycle() so the existing API remains stable.
+
+        The experiment engine must provide:
+
+            reason(goal, context)
+
+        or:
+
+            run(goal, context)
+
+        No fake actual result is generated here.
+        """
+
+        if self.is_stopped():
+            return {
+                "status": "stopped",
+                "reason": "stop_requested"
+            }
+
+        if self.experiment_engine is None:
+            return {
+                "status": "unavailable",
+                "reason": "experiment_engine_not_configured"
+            }
+
+        try:
+            if hasattr(self.experiment_engine, "reason"):
+                result = self.experiment_engine.reason(
+                    goal or {},
+                    context or {}
+                )
+
+            elif hasattr(self.experiment_engine, "run"):
+                result = self.experiment_engine.run(
+                    goal=goal or {},
+                    context=context or {}
+                )
+
+            else:
+                return {
+                    "status": "failed",
+                    "reason": "experiment_engine_interface_missing"
+                }
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "reason": "experiment_engine_error",
+                "error": str(error)
+            }
+
+        if not isinstance(result, dict):
+            return {
+                "status": "failed",
+                "reason": "experiment_engine_returned_invalid_result"
+            }
+
+        self.history.append(result)
+
+        return result
+
     def get_history(self):
         return list(self.history)
 
     def get_configuration(self):
         return {
-            "pipeline": type(self.pipeline).__name__,
+            "pipeline": type(
+                self.pipeline
+            ).__name__,
+            "experiment_engine": (
+                type(self.experiment_engine).__name__
+                if self.experiment_engine is not None
+                else None
+            ),
             "max_cycles": self.max_cycles,
             "stopped": self.is_stopped(),
             "history_size": len(self.history)
