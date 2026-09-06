@@ -1,45 +1,34 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.3
+Version 0.4
 
-Connects:
+Real adaptive cognitive cycle:
 
 Goal
-    ↓
-Hypothesis Generation
-    ↓
+ ↓
 Hypothesis Selection
-    ↓
-Plan
-    ↓
-Selected Hypothesis
-    ↓
+ ↓
+Prediction
+ ↓
 Experiment
-    ↓
-Actual Result
-    ↓
-Prediction Error
-    ↓
-Hypothesis Learning
-    ↓
-Memory
-    ↓
-World Model
+ ↓
+Actual Outcome
+ ↓
+Difference
+ ↓
+Evaluation
+ ↓
+Learning
+ ↓
+World Model Update
 
-Version 0.3:
-- Passes the selected hypothesis to experiments that explicitly support it.
-- Preserves compatibility with legacy experiments that only accept observation.
-- Records the selected hypothesis after the experiment result is known.
-- Does not invent experiment results.
-- Keeps hypothesis attribution explicit.
-- No uncontrolled loops.
-- No external side effects by itself.
-- Fully testable.
+No fake actual outcome is generated here.
 """
 
-from core.hypothesis_planner import HypothesisPlanningEngine
-from core.experiment_loop import ExperimentLoopEngine
+from core.hypothesis_planner import HypothesisPlanner
+from core.experiment import ExperimentEngine
+from core.world_model import WorldModel
 
 
 class CognitiveExperimentEngine:
@@ -47,205 +36,136 @@ class CognitiveExperimentEngine:
     def __init__(
         self,
         hypothesis_planner=None,
-        experiment_loop=None
+        experiment_engine=None,
+        world_model=None
     ):
         self.hypothesis_planner = (
             hypothesis_planner
             if hypothesis_planner is not None
-            else HypothesisPlanningEngine()
+            else HypothesisPlanner()
         )
 
-        self.experiment_loop = (
-            experiment_loop
-            if experiment_loop is not None
-            else ExperimentLoopEngine()
+        self.experiment_engine = (
+            experiment_engine
+            if experiment_engine is not None
+            else ExperimentEngine()
         )
 
-    def reason(self, goal_state):
-        return self.hypothesis_planner.create_reasoning_plan(
+        self.world_model = (
+            world_model
+            if world_model is not None
+            else WorldModel()
+        )
+
+        self.history = []
+
+    def reason(self, goal_state=None):
+        """
+        Select a hypothesis for the supplied goal.
+        """
+
+        goal_state = goal_state or {}
+
+        hypothesis = self.hypothesis_planner.select(
             goal_state
         )
 
-    def predict(self, observation):
-        return self.experiment_loop.predict(
-            observation
-        )
-
-    def run_experiment(
-        self,
-        observation,
-        hypothesis=None
-    ):
-        if self.experiment_loop.is_stopped():
-            return {
-                "status": "stopped",
-                "reason": "closed_loop_stopped"
-            }
-
-        experiment = self.experiment_loop.experiment
-
-        if experiment is None:
+        if hypothesis is None:
             return {
                 "status": "unavailable",
-                "reason": "experiment_not_configured"
-            }
-
-        execute = getattr(
-            experiment,
-            "run",
-            None
-        )
-
-        if not callable(execute):
-            return {
-                "status": "rejected",
-                "reason": "invalid_experiment"
-            }
-
-        try:
-            if hypothesis is not None:
-                actual = execute(
-                    observation,
-                    hypothesis=hypothesis
-                )
-            else:
-                actual = execute(observation)
-
-        except TypeError:
-            if hypothesis is None:
-                return {
-                    "status": "failed",
-                    "reason": "experiment_execution_failed",
-                    "error": "experiment_does_not_support_required_interface"
-                }
-
-            try:
-                actual = execute(observation)
-            except Exception as error:
-                return {
-                    "status": "failed",
-                    "reason": "experiment_execution_failed",
-                    "error": str(error)
-                }
-
-        except Exception as error:
-            return {
-                "status": "failed",
-                "reason": "experiment_execution_failed",
-                "error": str(error)
+                "reason": "no_hypothesis_available"
             }
 
         return {
-            "status": "experiment_completed",
-            "observation": observation,
-            "hypothesis": hypothesis,
-            "actual": actual
+            "status": "ready",
+            "hypothesis": hypothesis
         }
 
     def run_cycle(
         self,
-        goal_state,
-        observation
+        goal_state=None,
+        observation=None,
+        actual=None
     ):
-        reasoning = self.reason(
-            goal_state
-        )
+        """
+        Execute one complete cognitive experiment cycle.
+
+        `actual` must be supplied by the experiment/environment.
+        This engine never invents an actual outcome.
+        """
+
+        goal_state = goal_state or {}
+        observation = observation or {}
+
+        reasoning = self.reason(goal_state)
 
         if reasoning["status"] != "ready":
             return reasoning
 
-        selected_hypothesis = reasoning[
-            "selected_hypothesis"
-        ]
+        hypothesis = reasoning["hypothesis"]
 
-        hypothesis_name = selected_hypothesis.get(
-            "hypothesis"
-        )
-
-        prediction = self.predict(
+        prediction = self.hypothesis_planner.predict(
+            hypothesis,
             observation
         )
 
-        if prediction["status"] != "predicted":
-            return prediction
+        if actual is None:
+            return {
+                "status": "ready",
+                "reason": "awaiting_actual_outcome",
+                "hypothesis": hypothesis,
+                "prediction": prediction
+            }
 
-        experiment_result = self.run_experiment(
-            observation=observation,
-            hypothesis=selected_hypothesis
+        experiment_result = self.experiment_engine.run(
+            hypothesis=hypothesis,
+            prediction=prediction,
+            actual=actual
         )
 
-        if experiment_result["status"] != "experiment_completed":
-            return experiment_result
+        if not isinstance(experiment_result, dict):
+            return {
+                "status": "failed",
+                "reason": "invalid_experiment_result"
+            }
 
-        actual = experiment_result["actual"]
-
-        learning_result = (
-            self.experiment_loop.closed_loop.learn(
-                observation=observation,
-                prediction=prediction["prediction"],
-                actual=actual
-            )
+        difference = experiment_result.get(
+            "difference"
         )
 
-        difference = learning_result[
-            "cycle"
-        ]["difference"]
+        if difference is None:
+            return {
+                "status": "failed",
+                "reason": "experiment_difference_missing"
+            }
 
-        hypothesis_learning = (
-            self.hypothesis_planner.record_result(
-                hypothesis=hypothesis_name,
-                difference=difference
-            )
+        self.hypothesis_planner.record_result(
+            hypothesis,
+            difference
         )
 
-        return {
+        self.world_model.update(
+            prediction=prediction,
+            actual=actual,
+            difference=difference
+        )
+
+        result = {
             "status": "completed",
-            "goal": goal_state.get("goal"),
-            "hypotheses": reasoning["hypotheses"],
-            "selected_hypothesis": selected_hypothesis,
-            "plan": reasoning["plan"],
-            "observation": observation,
-            "prediction": prediction["prediction"],
+            "hypothesis": hypothesis,
+            "prediction": prediction,
             "actual": actual,
             "difference": difference,
-            "learning": learning_result[
-                "cycle"
-            ]["learning"],
-            "world_model": learning_result[
-                "cycle"
-            ]["world_model"],
-            "hypothesis_learning": hypothesis_learning,
-            "cycle": learning_result["cycle"],
-            "stopped": learning_result["stopped"]
+            "experiment": experiment_result,
+            "world_model": self.world_model.get_state()
         }
 
-    def stop(self):
-        return self.experiment_loop.stop()
+        self.history.append(result)
 
-    def reset(self):
-        return self.experiment_loop.reset()
+        return result
 
     def get_history(self):
-        return self.experiment_loop.get_history()
+        return list(self.history)
 
-    def get_cycle_count(self):
-        return self.experiment_loop.get_cycle_count()
-
-    def is_stopped(self):
-        return self.experiment_loop.is_stopped()
-
-    def get_learned_hypotheses(self):
-        return self.hypothesis_planner.get_learned_hypotheses()
-
-    def clear_learning(self):
-        return self.hypothesis_planner.clear_learning()
-
-    def get_configuration(self):
-        return {
-            "hypothesis_planner": type(
-                self.hypothesis_planner
-            ).__name__,
-            "experiment_loop": type(
-                self.experiment_loop
-            ).__name__
-        }
+    def clear_history(self):
+        self.history.clear()
