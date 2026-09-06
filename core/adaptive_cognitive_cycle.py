@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Cognitive Cycle
 
-Version 0.1
+Version 0.2
 
 Adaptive reasoning cycle:
 
@@ -21,12 +21,18 @@ Evaluation
     ↓
 Learning
     ↓
+Memory
+    ↓
+World Model
+    ↓
 Next Cycle
 
-This module is intentionally isolated from the
-existing CognitiveLoop so existing behavior remains stable.
-"""
+The controller supports both:
+- reason(goal, context)
+- reason(goal)
 
+No fake experiment result is generated here.
+"""
 
 class AdaptiveCognitiveCycle:
 
@@ -45,24 +51,15 @@ class AdaptiveCognitiveCycle:
                 "max_cycles must be greater than zero"
             )
 
-        self.cognitive_experiment = (
-            cognitive_experiment
-        )
-
+        self.cognitive_experiment = cognitive_experiment
         self.max_cycles = max_cycles
         self.history = []
         self.stopped = False
 
     def stop(self):
-        """
-        Stop future cycles.
-        """
         self.stopped = True
 
     def reset(self):
-        """
-        Reset the cycle controller.
-        """
         self.stopped = False
 
     def is_stopped(self):
@@ -71,6 +68,30 @@ class AdaptiveCognitiveCycle:
     def clear_history(self):
         self.history.clear()
 
+    def _reason(self, goal, context):
+        """
+        Call the cognitive experiment engine while
+        supporting both the new two-argument interface
+        and the existing one-argument interface.
+        """
+
+        reason = getattr(
+            self.cognitive_experiment,
+            "reason",
+            None
+        )
+
+        if not callable(reason):
+            raise AttributeError(
+                "cognitive_experiment.reason is not callable"
+            )
+
+        try:
+            return reason(goal, context)
+
+        except TypeError:
+            return reason(goal)
+
     def run_cycle(
         self,
         goal=None,
@@ -78,11 +99,6 @@ class AdaptiveCognitiveCycle:
     ):
         """
         Execute one adaptive cognitive cycle.
-
-        The experiment engine is responsible for
-        producing the actual reasoning/experiment result.
-
-        No fake outcome is generated here.
         """
 
         if self.stopped:
@@ -98,7 +114,7 @@ class AdaptiveCognitiveCycle:
             }
 
         try:
-            result = self.cognitive_experiment.reason(
+            result = self._reason(
                 goal or {},
                 context or {}
             )
@@ -127,11 +143,6 @@ class AdaptiveCognitiveCycle:
     ):
         """
         Run a bounded adaptive cognitive cycle.
-
-        Stops when:
-        - max_cycles is reached
-        - stop() is requested
-        - a cycle fails
         """
 
         self.reset()
@@ -191,4 +202,4 @@ class AdaptiveCognitiveCycle:
             "max_cycles": self.max_cycles,
             "stopped": self.stopped,
             "history_size": len(self.history)
-        }
+                }
