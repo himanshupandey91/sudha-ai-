@@ -1,120 +1,104 @@
 """
 Sudha AI - Memory Engine
 
-Version 0.1
+Version 0.2
 
-Stores and retrieves structured experiences.
+Provides bounded structured memory for Sudha AI.
 
-Design goals:
-- Structured memory
-- Deterministic behavior
+Capabilities:
+- Store experiences
+- Retrieve stored experiences
+- Preserve learning signals
 - Bounded memory size
-- Retrieval by similarity
+- Deterministic behavior
 - No external side effects
 """
 
 
 class MemoryEngine:
 
-    def __init__(self, max_memories=1000):
+    def __init__(self, max_size=100):
         """
         Initialize memory.
 
-        max_memories:
-            Maximum number of experiences stored.
+        max_size:
+            Maximum number of memories retained.
         """
 
-        if not isinstance(max_memories, int):
-            raise TypeError("max_memories must be an integer")
+        if not isinstance(max_size, int):
+            raise TypeError(
+                "max_size must be an integer"
+            )
 
-        if max_memories <= 0:
-            raise ValueError("max_memories must be greater than zero")
+        if max_size <= 0:
+            raise ValueError(
+                "max_size must be greater than zero"
+            )
 
-        self.max_memories = max_memories
-        self.memories = []
+        self.max_size = max_size
+        self._memories = []
 
-    def store(self, experience):
+    def store(self, memory):
         """
-        Store one structured experience.
-
-        The newest experience is kept.
-        If memory exceeds the limit, the oldest
-        experience is removed.
+        Store one structured memory.
         """
 
-        if not isinstance(experience, dict):
-            raise TypeError("experience must be a dictionary")
+        if not isinstance(memory, dict):
+            return {
+                "status": "rejected",
+                "reason": "memory_must_be_a_dictionary"
+            }
 
-        self.memories.append(experience.copy())
+        self._memories.append(
+            dict(memory)
+        )
 
-        if len(self.memories) > self.max_memories:
-            self.memories.pop(0)
+        if len(self._memories) > self.max_size:
+            self._memories.pop(0)
 
         return {
             "status": "stored",
-            "memory_size": len(self.memories)
+            "memory": dict(memory),
+            "count": len(self._memories)
         }
 
-    def retrieve_all(self):
+    def retrieve(self):
         """
-        Return all stored memories.
+        Retrieve all stored memories.
+
+        Returns copies so callers cannot directly
+        modify internal memory.
         """
-
-        return [memory.copy() for memory in self.memories]
-
-    def retrieve_recent(self, count=1):
-        """
-        Return the most recent memories.
-        """
-
-        if not isinstance(count, int):
-            raise TypeError("count must be an integer")
-
-        if count < 0:
-            raise ValueError("count cannot be negative")
 
         return [
-            memory.copy()
-            for memory in self.memories[-count:]
+            dict(memory)
+            for memory in self._memories
         ]
-
-    def retrieve_by_difference(self, minimum_difference):
-        """
-        Retrieve memories whose prediction error
-        is greater than or equal to the supplied threshold.
-        """
-
-        if not isinstance(minimum_difference, (int, float)):
-            raise TypeError(
-                "minimum_difference must be numeric"
-            )
-
-        results = []
-
-        for memory in self.memories:
-
-            difference = memory.get("difference", 0)
-
-            if difference >= minimum_difference:
-                results.append(memory.copy())
-
-        return results
-
-    def size(self):
-        """
-        Return the current number of stored memories.
-        """
-
-        return len(self.memories)
 
     def clear(self):
         """
         Clear all stored memories.
         """
 
-        self.memories.clear()
+        self._memories.clear()
 
         return {
-            "status": "cleared",
-            "memory_size": 0
+            "status": "cleared"
+        }
+
+    def size(self):
+        """
+        Return the current number of memories.
+        """
+
+        return len(self._memories)
+
+    def get_configuration(self):
+        """
+        Return memory configuration.
+        """
+
+        return {
+            "max_size": self.max_size,
+            "current_size": len(self._memories)
         }
