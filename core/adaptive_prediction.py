@@ -1,37 +1,37 @@
 """
 Sudha AI - Adaptive Prediction Engine
 
-Version 0.3
+Version 0.4
 
-Uses previous experiences from MemoryEngine
-to improve future predictions.
+Uses previous experience to adapt future predictions.
 
-Architecture:
+Core behavior:
 
 Current Observation
         ↓
 Base Prediction
         ↓
-Past Experiences
+Previous Experiences
         ↓
-Relevant Experience Selection
+Prediction Errors
+        ↓
+Average Error
         ↓
 Adaptive Prediction
 
 Design goals:
-- Backward compatibility
+- Use previous experience
+- Learn from prediction error
+- Support average historical error
+- Preserve exact-match experience behavior
+- Backward-compatible interfaces
 - Deterministic behavior
-- Experience-based adaptation
 - No external side effects
-- Replaceable prediction engine
-- Replaceable memory engine
-- Fully testable
-
-Important:
-This module does NOT claim to be AGI.
-It provides an explicit experience-based
-prediction mechanism.
 """
+
+
+from core.prediction import PredictionEngine
+from core.memory import MemoryEngine
 
 
 class AdaptivePredictionEngine:
@@ -43,41 +43,32 @@ class AdaptivePredictionEngine:
     ):
         """
         Initialize the adaptive prediction engine.
-
-        prediction_engine:
-            Object providing:
-                predict(observation)
-
-        memory_engine:
-            Object providing:
-                retrieve_all()
         """
 
         self.prediction_engine = (
             prediction_engine
             if prediction_engine is not None
-            else None
+            else PredictionEngine()
         )
 
         self.memory_engine = (
             memory_engine
             if memory_engine is not None
-            else None
+            else MemoryEngine()
         )
 
-    def predict(
-        self,
-        observation
-    ):
+    def predict(self, observation):
         """
-        Generate a prediction.
+        Generate an adaptive prediction.
 
-        If no prediction engine is configured,
-        the observation itself is used as the
-        baseline prediction.
+        Behavior:
 
-        Previous memories are then examined
-        for a matching experience.
+        1. Generate the normal/base prediction.
+        2. Look at previous experiences.
+        3. Calculate the average historical error.
+        4. Apply that error to numeric predictions.
+        5. If an exact previous observation exists,
+           use its learned prediction directly.
         """
 
         base_prediction = self._base_prediction(
@@ -86,30 +77,70 @@ class AdaptivePredictionEngine:
 
         memories = self._retrieve_memories()
 
-        if len(memories) == 0:
-            return base_prediction
-
-        relevant = self._find_relevant_memory(
+        # First preference:
+        # exact previous experience.
+        relevant_memory = self._find_relevant_memory(
             observation,
             memories
         )
 
-        if relevant is None:
-            return base_prediction
+        if relevant_memory is not None:
 
-        if "prediction" not in relevant:
-            return base_prediction
+            previous_prediction = (
+                relevant_memory.get("prediction")
+            )
 
-        return relevant["prediction"]
+            difference = (
+                relevant_memory.get("difference")
+            )
+
+            if (
+                isinstance(
+                    previous_prediction,
+                    (int, float)
+                )
+                and isinstance(
+                    difference,
+                    (int, float)
+                )
+                and isinstance(
+                    base_prediction,
+                    (int, float)
+                )
+            ):
+                return (
+                    base_prediction
+                    + difference
+                )
+
+            if previous_prediction is not None:
+                return previous_prediction
+
+        # No exact experience:
+        # use historical average error.
+        average_error = self._average_error(
+            memories
+        )
+
+        if isinstance(
+            base_prediction,
+            (int, float)
+        ) and average_error is not None:
+
+            return (
+                base_prediction
+                + average_error
+            )
+
+        return base_prediction
 
     def predict_with_details(
         self,
         observation
     ):
         """
-        Generate an adaptive prediction together
-        with information about the experience
-        used to produce it.
+        Generate an adaptive prediction with
+        diagnostic information.
         """
 
         base_prediction = self._base_prediction(
@@ -118,130 +149,34 @@ class AdaptivePredictionEngine:
 
         memories = self._retrieve_memories()
 
-        relevant = self._find_relevant_memory(
+        relevant_memory = self._find_relevant_memory(
             observation,
             memories
         )
 
-        if relevant is None:
-            return {
-                "status": "predicted",
-                "prediction": base_prediction,
-                "base_prediction": base_prediction,
-                "experience_used": False,
-                "experience": None
-            }
+        average_error = self._average_error(
+            memories
+        )
 
-        prediction = relevant.get(
-            "prediction",
-            base_prediction
+        prediction = self.predict(
+            observation
         )
 
         return {
             "status": "predicted",
-            "prediction": prediction,
+            "observation": observation,
             "base_prediction": base_prediction,
-            "experience_used": True,
-            "experience": dict(relevant)
+            "prediction": prediction,
+            "experience_used": (
+                relevant_memory is not None
+            ),
+            "experience": (
+                dict(relevant_memory)
+                if relevant_memory is not None
+                else None
+            ),
+            "average_error": average_error
         }
-
-    def _base_prediction(
-        self,
-        observation
-    ):
-        """
-        Generate the baseline prediction.
-        """
-
-        if self.prediction_engine is None:
-            return observation
-
-        predict = getattr(
-            self.prediction_engine,
-            "predict",
-            None
-        )
-
-        if not callable(predict):
-            return observation
-
-        return predict(
-            observation
-        )
-
-    def _retrieve_memories(self):
-        """
-        Retrieve stored experiences safely.
-
-        Supports the existing MemoryEngine
-        retrieve_all() interface.
-        """
-
-        if self.memory_engine is None:
-            return []
-
-        retrieve_all = getattr(
-            self.memory_engine,
-            "retrieve_all",
-            None
-        )
-
-        if not callable(retrieve_all):
-            return []
-
-        try:
-            memories = retrieve_all()
-
-        except Exception:
-            return []
-
-        if not isinstance(
-            memories,
-            list
-        ):
-            return []
-
-        return memories
-
-    def _find_relevant_memory(
-        self,
-        observation,
-        memories
-    ):
-        """
-        Find the most recent relevant experience.
-
-        Relevance is determined by matching
-        the stored observation with the current
-        observation.
-
-        The search is performed from newest
-        memory to oldest memory so the latest
-        experience has priority.
-        """
-
-        for memory in reversed(
-            memories
-        ):
-
-            if not isinstance(
-                memory,
-                dict
-            ):
-                continue
-
-            if "observation" not in memory:
-                continue
-
-            if memory["observation"] != observation:
-                continue
-
-            if "prediction" not in memory:
-                continue
-
-            return memory
-
-        return None
 
     def remember(
         self,
@@ -252,34 +187,8 @@ class AdaptivePredictionEngine:
         learning=None
     ):
         """
-        Store a completed experience.
-
-        The memory structure preserves:
-
-        observation
-        prediction
-        actual
-        difference
-        learning
+        Store a new experience in memory.
         """
-
-        if self.memory_engine is None:
-            return {
-                "status": "unavailable",
-                "reason": "memory_engine_not_configured"
-            }
-
-        store = getattr(
-            self.memory_engine,
-            "store",
-            None
-        )
-
-        if not callable(store):
-            return {
-                "status": "rejected",
-                "reason": "memory_engine_invalid"
-            }
 
         memory = {
             "observation": observation,
@@ -295,29 +204,146 @@ class AdaptivePredictionEngine:
         if learning is not None:
             memory["learning"] = learning
 
-        try:
-            return store(
-                memory
+        return self.memory_engine.store(
+            memory
+        )
+
+    def _base_prediction(
+        self,
+        observation
+    ):
+        """
+        Generate the normal prediction.
+        """
+
+        return self.prediction_engine.predict(
+            observation
+        )
+
+    def _retrieve_memories(self):
+        """
+        Retrieve memories using the supported
+        memory interface.
+        """
+
+        retrieve_all = getattr(
+            self.memory_engine,
+            "retrieve_all",
+            None
+        )
+
+        if callable(retrieve_all):
+            memories = retrieve_all()
+
+        else:
+            retrieve = getattr(
+                self.memory_engine,
+                "retrieve",
+                None
             )
 
-        except Exception as error:
-            return {
-                "status": "failed",
-                "reason": "memory_store_failed",
-                "error": str(error)
-            }
+            if callable(retrieve):
+                memories = retrieve()
+
+            else:
+                memories = []
+
+        if not isinstance(
+            memories,
+            list
+        ):
+            return []
+
+        return memories
+
+    def _find_relevant_memory(
+        self,
+        observation,
+        memories
+    ):
+        """
+        Find the most recent exact-match
+        experience for the observation.
+        """
+
+        for memory in reversed(
+            memories
+        ):
+
+            if not isinstance(
+                memory,
+                dict
+            ):
+                continue
+
+            if memory.get(
+                "observation"
+            ) == observation:
+
+                return memory
+
+        return None
+
+    def _average_error(
+        self,
+        memories
+    ):
+        """
+        Calculate the average historical
+        prediction error.
+
+        Only numeric differences are used.
+        """
+
+        errors = []
+
+        for memory in memories:
+
+            if not isinstance(
+                memory,
+                dict
+            ):
+                continue
+
+            difference = memory.get(
+                "difference"
+            )
+
+            if isinstance(
+                difference,
+                (int, float)
+            ):
+                errors.append(
+                    difference
+                )
+
+        if len(errors) == 0:
+            return None
+
+        return sum(errors) / len(errors)
 
     def get_configuration(self):
         """
-        Return the current adaptive prediction
-        configuration.
+        Return engine configuration.
         """
 
         return {
-            "prediction_engine_configured": (
-                self.prediction_engine is not None
+            "prediction_engine": (
+                type(
+                    self.prediction_engine
+                ).__name__
             ),
-            "memory_engine_configured": (
-                self.memory_engine is not None
+            "memory_engine": (
+                type(
+                    self.memory_engine
+                ).__name__
+            ),
+            "memory_size": (
+                self.memory_engine.size()
+                if hasattr(
+                    self.memory_engine,
+                    "size"
+                )
+                else None
             )
-        }
+                    }
