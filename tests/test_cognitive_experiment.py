@@ -76,9 +76,8 @@ def test_reasoning_empty_goal():
 
     result = engine.reason({})
 
-    assert result["status"] == "ready"
-    assert result["goal"] is None
-    assert result["hypotheses"] == []
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "no_hypothesis_available"
 
 
 def test_predict():
@@ -204,7 +203,12 @@ def test_world_model_receives_result():
         10
     )
 
-    state = engine.experiment_loop.closed_loop.experience_learning.get_world_state()
+    state = (
+        engine.experiment_loop
+        .closed_loop
+        .experience_learning
+        .get_world_state()
+    )
 
     assert result["world_model"]["actual"] == 15
     assert state["last_actual"] == 15
