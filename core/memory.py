@@ -1,14 +1,16 @@
 """
 Sudha AI - Memory Engine
 
-Version 0.3
+Version 0.4
 
 Provides bounded structured memory for Sudha AI.
 
 Capabilities:
 - Store experiences
-- Retrieve stored experiences
-- Backward-compatible retrieve_all()
+- Retrieve all memories
+- Retrieve recent memories
+- Retrieve high-error experiences
+- Backward-compatible API
 - Preserve learning signals
 - Bounded memory size
 - Deterministic behavior
@@ -50,8 +52,10 @@ class MemoryEngine:
                 "reason": "memory_must_be_a_dictionary"
             }
 
+        stored_memory = dict(memory)
+
         self._memories.append(
-            dict(memory)
+            stored_memory
         )
 
         if len(self._memories) > self.max_size:
@@ -59,8 +63,9 @@ class MemoryEngine:
 
         return {
             "status": "stored",
-            "memory": dict(memory),
-            "count": len(self._memories)
+            "memory": dict(stored_memory),
+            "count": len(self._memories),
+            "memory_size": len(self._memories)
         }
 
     def retrieve(self):
@@ -78,13 +83,72 @@ class MemoryEngine:
 
     def retrieve_all(self):
         """
-        Backward-compatible memory retrieval.
-
-        Existing cognitive components use this
-        method to access previous experiences.
+        Backward-compatible retrieval method.
         """
 
         return self.retrieve()
+
+    def retrieve_recent(self, count):
+        """
+        Retrieve the most recent memories.
+
+        count:
+            Number of recent memories requested.
+        """
+
+        if not isinstance(count, int):
+            raise TypeError(
+                "count must be an integer"
+            )
+
+        if count < 0:
+            raise ValueError(
+                "count must be zero or greater"
+            )
+
+        if count == 0:
+            return []
+
+        return [
+            dict(memory)
+            for memory in self._memories[-count:]
+        ]
+
+    def retrieve_by_error(self, minimum_error=0):
+        """
+        Retrieve memories whose prediction error
+        is greater than or equal to minimum_error.
+
+        Memories without a numeric 'difference'
+        field are ignored.
+        """
+
+        if not isinstance(
+            minimum_error,
+            (int, float)
+        ):
+            raise TypeError(
+                "minimum_error must be a number"
+            )
+
+        results = []
+
+        for memory in self._memories:
+
+            difference = memory.get(
+                "difference"
+            )
+
+            if isinstance(
+                difference,
+                (int, float)
+            ) and difference >= minimum_error:
+
+                results.append(
+                    dict(memory)
+                )
+
+        return results
 
     def clear(self):
         """
