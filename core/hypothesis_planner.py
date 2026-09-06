@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Hypothesis Planning Engine
 
-Version 0.2
+Version 0.3
 
 Connects:
 
@@ -11,14 +11,17 @@ Candidate Hypotheses
   ↓
 Hypothesis Performance
   ↓
+Exploration / Exploitation
+  ↓
 Adaptive Selection
   ↓
 Plan
 
-Version 0.2:
+Version 0.3:
 - Integrates HypothesisLearningEngine
 - Uses learned performance when available
-- Keeps static priority as fallback for unseen hypotheses
+- Supports deterministic exploration of unseen hypotheses
+- Keeps static priority as fallback when exploration is disabled
 - Does not invent experiment results
 - Deterministic behavior
 - Bounded candidate generation
@@ -36,7 +39,8 @@ class HypothesisPlanningEngine:
         self,
         hypothesis_engine=None,
         planning_engine=None,
-        hypothesis_learning=None
+        hypothesis_learning=None,
+        exploration=False
     ):
         self.hypothesis = (
             hypothesis_engine
@@ -55,6 +59,13 @@ class HypothesisPlanningEngine:
             if hypothesis_learning is not None
             else HypothesisLearningEngine()
         )
+
+        if not isinstance(exploration, bool):
+            raise ValueError(
+                "exploration must be a boolean"
+            )
+
+        self.exploration = exploration
 
     def generate_hypotheses(self, goal_state):
         try:
@@ -91,6 +102,7 @@ class HypothesisPlanningEngine:
             }
 
         learned = []
+        unseen = []
 
         for candidate in hypotheses:
             name = candidate.get("hypothesis")
@@ -103,9 +115,25 @@ class HypothesisPlanningEngine:
             )
 
             if result.get("status") == "unseen":
+                unseen.append(candidate)
                 continue
 
             learned.append(result)
+
+        if self.exploration and unseen:
+            selected = max(
+                unseen,
+                key=lambda item: item["priority"]
+            )
+
+            return {
+                "status": "selected",
+                "hypothesis": {
+                    **dict(selected),
+                    "learned": False,
+                    "exploration": True
+                }
+            }
 
         if learned:
             learned.sort(
@@ -127,6 +155,7 @@ class HypothesisPlanningEngine:
                         best["hypothesis"]
                     ),
                     "learned": True,
+                    "exploration": False,
                     "score": best["score"],
                     "average_error": best[
                         "average_error"
@@ -142,7 +171,11 @@ class HypothesisPlanningEngine:
 
         return {
             "status": "selected",
-            "hypothesis": dict(best)
+            "hypothesis": {
+                **dict(best),
+                "learned": False,
+                "exploration": False
+            }
         }
 
     def record_result(
@@ -240,5 +273,6 @@ class HypothesisPlanningEngine:
             ).__name__,
             "hypothesis_learning": type(
                 self.hypothesis_learning
-            ).__name__
-      }
+            ).__name__,
+            "exploration": self.exploration
+        }
