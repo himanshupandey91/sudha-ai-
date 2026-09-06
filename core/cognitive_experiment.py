@@ -1,37 +1,39 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.2
+Version 0.3
 
 Connects:
 
 Goal
     ↓
-Hypothesis
+Hypothesis Generation
+    ↓
+Hypothesis Selection
     ↓
 Plan
     ↓
-Prediction
+Selected Hypothesis
     ↓
 Experiment
     ↓
 Actual Result
     ↓
-Difference
+Prediction Error
     ↓
-Learning
+Hypothesis Learning
     ↓
 Memory
     ↓
 World Model
 
-Version 0.2:
-- Preserves existing reasoning API.
-- Connects reasoning to ExperimentLoopEngine.
-- Executes a complete controlled experiment cycle.
-- Returns prediction, actual result, difference and learning data.
-- Uses existing closed-loop safety limits.
-- No uncontrolled infinite loops.
+Version 0.3:
+- Passes the selected hypothesis to experiments that explicitly support it.
+- Preserves compatibility with legacy experiments that only accept observation.
+- Records the selected hypothesis after the experiment result is known.
+- Does not invent experiment results.
+- Keeps hypothesis attribution explicit.
+- No uncontrolled loops.
 - No external side effects by itself.
 - Fully testable.
 """
@@ -69,61 +71,152 @@ class CognitiveExperimentEngine:
             observation
         )
 
-    def run_cycle(self, goal_state, observation):
-        reasoning = self.reason(goal_state)
+    def run_experiment(
+        self,
+        observation,
+        hypothesis=None
+    ):
+        if self.experiment_loop.is_stopped():
+            return {
+                "status": "stopped",
+                "reason": "closed_loop_stopped"
+            }
+
+        experiment = self.experiment_loop.experiment
+
+        if experiment is None:
+            return {
+                "status": "unavailable",
+                "reason": "experiment_not_configured"
+            }
+
+        execute = getattr(
+            experiment,
+            "run",
+            None
+        )
+
+        if not callable(execute):
+            return {
+                "status": "rejected",
+                "reason": "invalid_experiment"
+            }
+
+        try:
+            if hypothesis is not None:
+                actual = execute(
+                    observation,
+                    hypothesis=hypothesis
+                )
+            else:
+                actual = execute(observation)
+
+        except TypeError:
+            if hypothesis is None:
+                return {
+                    "status": "failed",
+                    "reason": "experiment_execution_failed",
+                    "error": "experiment_does_not_support_required_interface"
+                }
+
+            try:
+                actual = execute(observation)
+            except Exception as error:
+                return {
+                    "status": "failed",
+                    "reason": "experiment_execution_failed",
+                    "error": str(error)
+                }
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "reason": "experiment_execution_failed",
+                "error": str(error)
+            }
+
+        return {
+            "status": "experiment_completed",
+            "observation": observation,
+            "hypothesis": hypothesis,
+            "actual": actual
+        }
+
+    def run_cycle(
+        self,
+        goal_state,
+        observation
+    ):
+        reasoning = self.reason(
+            goal_state
+        )
 
         if reasoning["status"] != "ready":
             return reasoning
 
-        experiment_result = self.experiment_loop.run_cycle(
+        selected_hypothesis = reasoning[
+            "selected_hypothesis"
+        ]
+
+        hypothesis_name = selected_hypothesis.get(
+            "hypothesis"
+        )
+
+        prediction = self.predict(
             observation
         )
 
-        if experiment_result["status"] not in (
-            "completed",
-            "stopped"
-        ):
-            return {
-                "status": experiment_result["status"],
-                "goal": goal_state.get("goal"),
-                "hypotheses": reasoning["hypotheses"],
-                "selected_hypothesis": reasoning[
-                    "selected_hypothesis"
-                ],
-                "plan": reasoning["plan"],
-                "observation": observation,
-                "experiment": experiment_result
-            }
+        if prediction["status"] != "predicted":
+            return prediction
 
-        if experiment_result["status"] == "stopped":
-            return {
-                "status": "stopped",
-                "goal": goal_state.get("goal"),
-                "hypotheses": reasoning["hypotheses"],
-                "selected_hypothesis": reasoning[
-                    "selected_hypothesis"
-                ],
-                "plan": reasoning["plan"],
-                "observation": observation,
-                "experiment": experiment_result
-            }
+        experiment_result = self.run_experiment(
+            observation=observation,
+            hypothesis=selected_hypothesis
+        )
+
+        if experiment_result["status"] != "experiment_completed":
+            return experiment_result
+
+        actual = experiment_result["actual"]
+
+        learning_result = (
+            self.experiment_loop.closed_loop.learn(
+                observation=observation,
+                prediction=prediction["prediction"],
+                actual=actual
+            )
+        )
+
+        difference = learning_result[
+            "cycle"
+        ]["difference"]
+
+        hypothesis_learning = (
+            self.hypothesis_planner.record_result(
+                hypothesis=hypothesis_name,
+                difference=difference
+            )
+        )
 
         return {
             "status": "completed",
             "goal": goal_state.get("goal"),
             "hypotheses": reasoning["hypotheses"],
-            "selected_hypothesis": reasoning[
-                "selected_hypothesis"
-            ],
+            "selected_hypothesis": selected_hypothesis,
             "plan": reasoning["plan"],
-            "observation": experiment_result["observation"],
-            "prediction": experiment_result["prediction"],
-            "actual": experiment_result["actual"],
-            "difference": experiment_result["difference"],
-            "learning": experiment_result["learning"],
-            "world_model": experiment_result["world_model"],
-            "cycle": experiment_result["cycle"],
-            "stopped": experiment_result["stopped"]
+            "observation": observation,
+            "prediction": prediction["prediction"],
+            "actual": actual,
+            "difference": difference,
+            "learning": learning_result[
+                "cycle"
+            ]["learning"],
+            "world_model": learning_result[
+                "cycle"
+            ]["world_model"],
+            "hypothesis_learning": hypothesis_learning,
+            "cycle": learning_result["cycle"],
+            "stopped": learning_result["stopped"]
         }
 
     def stop(self):
@@ -140,6 +233,12 @@ class CognitiveExperimentEngine:
 
     def is_stopped(self):
         return self.experiment_loop.is_stopped()
+
+    def get_learned_hypotheses(self):
+        return self.hypothesis_planner.get_learned_hypotheses()
+
+    def clear_learning(self):
+        return self.hypothesis_planner.clear_learning()
 
     def get_configuration(self):
         return {
