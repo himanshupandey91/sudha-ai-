@@ -74,7 +74,9 @@ def test_evaluate_seen_hypothesis():
         "use_recent_experience"
     )
 
-    assert result["status"] == "recorded"
+    assert result["hypothesis"] == (
+        "use_recent_experience"
+    )
     assert result["attempts"] == 1
     assert result["average_error"] == 4
     assert result["score"] == 1 / 5
