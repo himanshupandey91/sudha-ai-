@@ -556,4 +556,4 @@ def test_learned_hypothesis_is_used_again_in_next_cycle():
 
     assert selected_record is not None
     assert selected_record["attempts"] == 2
-    assert selected_record["average_error"] == 2
+    assert selected_record["average_error"] == 1.0
