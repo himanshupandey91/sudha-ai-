@@ -188,4 +188,3 @@ class CognitiveExperimentEngine:
                 self.experiment_loop
             ).__name__
         }
-    }
