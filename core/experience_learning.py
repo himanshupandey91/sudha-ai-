@@ -1,7 +1,7 @@
 """
 Sudha AI - Experience Learning Engine
 
-Version 0.1
+Version 0.2
 
 Connects:
 
@@ -15,22 +15,25 @@ Learning Signal
     ↓
 Memory
     ↓
+World Model
+    ↓
 Adaptive Prediction
 
-Design goals:
-- Connect existing cognitive components
-- Store real experiences
-- Never invent actual outcomes
-- Use previous experience for future prediction
+Version 0.2:
+- Integrates WorldModel
+- Stores completed experiences
+- Updates world state after learning
+- Preserves previous API behavior
+- Never invents actual outcomes
 - Deterministic behavior
 - No external side effects
-- Fully testable
 """
 
 from core.difference import DifferenceEngine
 from core.learning import LearningEngine
 from core.adaptive_prediction import AdaptivePredictionEngine
 from core.memory import MemoryEngine
+from core.world_model import WorldModel
 
 
 class ExperienceLearningEngine:
@@ -40,7 +43,8 @@ class ExperienceLearningEngine:
         adaptive_prediction=None,
         difference=None,
         learning=None,
-        memory=None
+        memory=None,
+        world_model=None
     ):
         """
         Initialize the experience-learning system.
@@ -70,6 +74,12 @@ class ExperienceLearningEngine:
             learning
             if learning is not None
             else LearningEngine()
+        )
+
+        self.world_model = (
+            world_model
+            if world_model is not None
+            else WorldModel()
         )
 
     def predict(self, observation):
@@ -116,6 +126,16 @@ class ExperienceLearningEngine:
             learning=learning_result
         )
 
+        world_model_result = (
+            self.world_model.update(
+                observation=observation,
+                prediction=prediction,
+                actual=actual,
+                difference=difference,
+                learning=learning_result
+            )
+        )
+
         return {
             "status": "learned",
             "observation": observation,
@@ -123,7 +143,8 @@ class ExperienceLearningEngine:
             "actual": actual,
             "difference": difference,
             "learning": learning_result,
-            "memory": memory_result
+            "memory": memory_result,
+            "world_model": world_model_result
         }
 
     def run(
@@ -135,11 +156,22 @@ class ExperienceLearningEngine:
         Run one complete experience-learning cycle.
 
         Without actual:
+
             observation → prediction
 
         With actual:
-            observation → prediction → difference
-            → learning → memory
+
+            observation
+                ↓
+            prediction
+                ↓
+            difference
+                ↓
+            learning
+                ↓
+            memory
+                ↓
+            world model
         """
 
         prediction_result = self.predict(
@@ -179,6 +211,9 @@ class ExperienceLearningEngine:
             ],
             "memory": learning_result[
                 "memory"
+            ],
+            "world_model": learning_result[
+                "world_model"
             ]
         }
 
@@ -196,9 +231,39 @@ class ExperienceLearningEngine:
 
         return self.memory.size()
 
-    def clear_memory(self):
+    def get_world_state(self):
         """
-        Clear all stored experiences.
+        Return the current World Model state.
         """
 
-        return self.memory.clear()
+        return self.world_model.get_state()
+
+    def get_world_history(self):
+        """
+        Return World Model history.
+        """
+
+        return self.world_model.get_history()
+
+    def get_experience_count(self):
+        """
+        Return the number of experiences
+        recorded by the World Model.
+        """
+
+        return self.world_model.get_experience_count()
+
+    def clear_memory(self):
+        """
+        Clear stored experiences and reset
+        the World Model.
+        """
+
+        memory_result = self.memory.clear()
+        world_result = self.world_model.clear()
+
+        return {
+            "status": "cleared",
+            "memory": memory_result,
+            "world_model": world_result
+        }
