@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.1
+Version 0.2
 
 Connects:
 
@@ -11,11 +11,13 @@ Hypothesis
     ↓
 Plan
     ↓
+Prediction
+    ↓
 Experiment
     ↓
 Actual Result
     ↓
-Evaluation
+Difference
     ↓
 Learning
     ↓
@@ -23,13 +25,15 @@ Memory
     ↓
 World Model
 
-Design goals:
-- Reuse existing Sudha AI components
-- Explicit reasoning cycle
-- No uncontrolled loops
-- No external side effects
-- Deterministic behavior
-- Fully testable
+Version 0.2:
+- Preserves existing reasoning API.
+- Connects reasoning to ExperimentLoopEngine.
+- Executes a complete controlled experiment cycle.
+- Returns prediction, actual result, difference and learning data.
+- Uses existing closed-loop safety limits.
+- No uncontrolled infinite loops.
+- No external side effects by itself.
+- Fully testable.
 """
 
 from core.hypothesis_planner import HypothesisPlanningEngine
@@ -71,22 +75,71 @@ class CognitiveExperimentEngine:
         if reasoning["status"] != "ready":
             return reasoning
 
-        prediction = self.predict(observation)
+        experiment_result = self.experiment_loop.run_cycle(
+            observation
+        )
 
-        if prediction["status"] != "predicted":
-            return prediction
+        if experiment_result["status"] not in (
+            "completed",
+            "stopped"
+        ):
+            return {
+                "status": experiment_result["status"],
+                "goal": goal_state.get("goal"),
+                "hypotheses": reasoning["hypotheses"],
+                "selected_hypothesis": reasoning[
+                    "selected_hypothesis"
+                ],
+                "plan": reasoning["plan"],
+                "observation": observation,
+                "experiment": experiment_result
+            }
+
+        if experiment_result["status"] == "stopped":
+            return {
+                "status": "stopped",
+                "goal": goal_state.get("goal"),
+                "hypotheses": reasoning["hypotheses"],
+                "selected_hypothesis": reasoning[
+                    "selected_hypothesis"
+                ],
+                "plan": reasoning["plan"],
+                "observation": observation,
+                "experiment": experiment_result
+            }
 
         return {
-            "status": "ready",
+            "status": "completed",
             "goal": goal_state.get("goal"),
             "hypotheses": reasoning["hypotheses"],
             "selected_hypothesis": reasoning[
                 "selected_hypothesis"
             ],
             "plan": reasoning["plan"],
-            "observation": observation,
-            "prediction": prediction["prediction"]
+            "observation": experiment_result["observation"],
+            "prediction": experiment_result["prediction"],
+            "actual": experiment_result["actual"],
+            "difference": experiment_result["difference"],
+            "learning": experiment_result["learning"],
+            "world_model": experiment_result["world_model"],
+            "cycle": experiment_result["cycle"],
+            "stopped": experiment_result["stopped"]
         }
+
+    def stop(self):
+        return self.experiment_loop.stop()
+
+    def reset(self):
+        return self.experiment_loop.reset()
+
+    def get_history(self):
+        return self.experiment_loop.get_history()
+
+    def get_cycle_count(self):
+        return self.experiment_loop.get_cycle_count()
+
+    def is_stopped(self):
+        return self.experiment_loop.is_stopped()
 
     def get_configuration(self):
         return {
