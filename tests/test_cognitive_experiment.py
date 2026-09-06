@@ -500,3 +500,60 @@ def test_hypothesis_learning_improves_selection_across_cycles():
     )
     assert selected["learned"] is True
     assert selected["average_error"] == 2
+
+    assert selected["attempts"] == 1
+
+    assert selected["score"] == 1 / (1 + 2)
+
+
+def test_learned_hypothesis_is_used_again_in_next_cycle():
+    experiment = HypothesisAwareExperiment(
+        result=10
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    planner = engine.hypothesis_planner
+
+    planner.record_result(
+        "use_recent_experience",
+        10
+    )
+
+    planner.record_result(
+        "increase_observation_frequency",
+        2
+    )
+
+    first = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert first["status"] == "completed"
+    assert first["selected_hypothesis"]["hypothesis"] == (
+        "increase_observation_frequency"
+    )
+
+    assert experiment.received_hypothesis["hypothesis"] == (
+        "increase_observation_frequency"
+    )
+
+    learned = engine.get_learned_hypotheses()
+
+    selected_record = None
+
+    for record in learned:
+        if record["hypothesis"] == (
+            "increase_observation_frequency"
+        ):
+            selected_record = record
+            break
+
+    assert selected_record is not None
+    assert selected_record["attempts"] == 2
+    assert selected_record["average_error"] == 2
