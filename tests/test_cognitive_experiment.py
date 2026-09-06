@@ -83,9 +83,7 @@ def test_reasoning_empty_goal():
 def test_predict():
     experiment = FakeExperiment()
 
-    engine = CognitiveExperimentEngine(
-        experiment_loop=None
-    )
+    engine = CognitiveExperimentEngine()
 
     engine.experiment_loop.experiment = experiment
 
@@ -210,8 +208,9 @@ def test_world_model_receives_result():
         .get_world_state()
     )
 
+    assert result["status"] == "completed"
     assert result["world_model"]["actual"] == 15
-    assert state["last_actual"] == 15
+    assert state["actual"] == 15
 
 
 def test_history_is_preserved():
@@ -318,7 +317,6 @@ def test_selected_hypothesis_reaches_experiment():
     )
 
     assert result["status"] == "completed"
-
     assert experiment.received_observation == 10
 
     assert experiment.received_hypothesis == {
