@@ -1,7 +1,7 @@
 """
 Sudha AI - Main Cognitive Pipeline
 
-Version 0.4
+Version 0.5
 
 Current pipeline:
 
@@ -16,16 +16,23 @@ Prediction
 Actual Outcome
   ↓
 Difference
+  ↓
+Learning
+  ↓
+Memory
 
 Important:
 - No fake actual outcome is generated.
-- Difference is calculated only when a real
-  actual outcome is explicitly provided.
+- Learning occurs only after an actual outcome is provided.
+- Every completed learning cycle is stored in memory.
+- Existing run() behavior is preserved.
 """
 
 from core.perception import PerceptionEngine
 from core.prediction import PredictionEngine
 from core.difference import DifferenceEngine
+from core.learning import LearningEngine
+from core.memory import MemoryEngine
 
 
 class SudhaAI:
@@ -34,10 +41,12 @@ class SudhaAI:
         self,
         perception=None,
         prediction=None,
-        difference=None
+        difference=None,
+        learning=None,
+        memory=None
     ):
         """
-        Initialize the core cognitive components.
+        Initialize the cognitive components.
         """
 
         self.perception = (
@@ -56,6 +65,18 @@ class SudhaAI:
             difference
             if difference is not None
             else DifferenceEngine()
+        )
+
+        self.learning = (
+            learning
+            if learning is not None
+            else LearningEngine()
+        )
+
+        self.memory = (
+            memory
+            if memory is not None
+            else MemoryEngine()
         )
 
     def observe(
@@ -110,10 +131,7 @@ class SudhaAI:
         actual
     ):
         """
-        Compare a prediction with the actual outcome.
-
-        This method is only called when an actual
-        outcome is explicitly provided.
+        Compare prediction with actual outcome.
         """
 
         difference = self.difference.calculate(
@@ -126,6 +144,54 @@ class SudhaAI:
             "prediction": prediction,
             "actual": actual,
             "difference": difference
+        }
+
+    def learn(
+        self,
+        difference
+    ):
+        """
+        Convert prediction error into
+        a learning signal.
+        """
+
+        learning = self.learning.learn(
+            difference
+        )
+
+        return {
+            "status": "learned",
+            "learning": learning
+        }
+
+    def store_experience(
+        self,
+        observation,
+        prediction,
+        actual,
+        comparison,
+        learning
+    ):
+        """
+        Store one complete experience in memory.
+        """
+
+        experience = {
+            "observation": observation,
+            "prediction": prediction,
+            "actual": actual,
+            "difference": comparison["difference"],
+            "learning_signal": learning["learning_signal"]
+        }
+
+        memory_result = self.memory.store(
+            experience
+        )
+
+        return {
+            "status": "memory_updated",
+            "memory": memory_result,
+            "experience": experience
         }
 
     def run(
@@ -170,7 +236,7 @@ class SudhaAI:
         video=None
     ):
         """
-        Run a complete prediction → comparison cycle.
+        Run a complete learning cycle.
 
         Flow:
 
@@ -183,9 +249,10 @@ class SudhaAI:
         Actual Outcome
           ↓
         Difference
-
-        The actual outcome must be supplied
-        explicitly by the caller.
+          ↓
+        Learning
+          ↓
+        Memory
         """
 
         observation = self.observe(
@@ -210,9 +277,42 @@ class SudhaAI:
             actual
         )
 
+        learning = self.learn(
+            comparison["difference"]
+        )
+
+        memory = self.store_experience(
+            observation=observation,
+            prediction=prediction["prediction"],
+            actual=actual,
+            comparison=comparison,
+            learning=learning["learning"]
+        )
+
         return {
             "status": "completed",
             "observation": observation,
             "prediction": prediction,
-            "comparison": comparison
+            "comparison": comparison,
+            "learning": learning,
+            "memory": memory
         }
+
+    def get_memories(self):
+        """
+        Return all stored experiences.
+        """
+
+        return self.memory.retrieve_all()
+
+    def get_recent_memories(
+        self,
+        count=1
+    ):
+        """
+        Return recent experiences.
+        """
+
+        return self.memory.retrieve_recent(
+            count
+          )
