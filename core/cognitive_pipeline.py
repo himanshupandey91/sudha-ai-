@@ -1,260 +1,188 @@
 """
-Sudha AI - Cognitive Pipeline
+Sudha AI - Cognitive Perception Pipeline
 
-Version 0.3
+Version 0.4
 
-Cognitive flow:
+Connects:
 
 Input
   ↓
 Perception
   ↓
-Unified Observation
+Observation
   ↓
-Prediction
-  ↓
-Actual Outcome
-  ↓
-Difference
-  ↓
-Learning Signal
+Cognitive Processing
 
-Important:
-- Actual outcome is never invented.
-- Learning occurs only when an actual outcome is supplied.
-- LearningEngine receives the prediction difference.
-- No autonomous external actions.
-- Components remain replaceable and testable.
+Supported inputs:
+- Text
+- Audio
+- Generic perception objects
+
+Design goals:
+- Convert external input into a normalized observation
+- Preserve the original input
+- Keep perception separate from reasoning
+- Support future camera/video integration
+- Deterministic and testable
+- No external side effects
 """
 
 from core.perception import PerceptionEngine
-from core.prediction import PredictionEngine
-from core.difference import DifferenceEngine
-from core.learning import LearningEngine
 
 
-class CognitivePipeline:
+class CognitivePerceptionPipeline:
 
-    def __init__(
-        self,
-        perception=None,
-        prediction=None,
-        difference=None,
-        learning=None
-    ):
-        """
-        Initialize the cognitive pipeline.
-        """
-
+    def __init__(self, perception=None):
         self.perception = (
             perception
             if perception is not None
             else PerceptionEngine()
         )
 
-        self.prediction = (
-            prediction
-            if prediction is not None
-            else PredictionEngine()
-        )
+        self.last_observation = None
+        self.history = []
 
-        self.difference = (
-            difference
-            if difference is not None
-            else DifferenceEngine()
-        )
-
-        self.learning = (
-            learning
-            if learning is not None
-            else LearningEngine()
-        )
-
-    def observe(
-        self,
-        text=None,
-        voice=None,
-        image=None,
-        video=None
-    ):
+    def perceive(self, input_data):
         """
-        Create a unified multimodal observation.
-        """
-
-        return self.perception.create_multimodal_observation(
-            text=text,
-            voice=voice,
-            image=image,
-            video=video
-        )
-
-    def predict(self, observation):
-        """
-        Generate a prediction from an observation.
-        """
-
-        if not isinstance(observation, dict):
-            return {
-                "status": "rejected",
-                "reason": "observation_must_be_a_dictionary"
-            }
-
-        if observation.get("status") != "observation_created":
-            return {
-                "status": "rejected",
-                "reason": "invalid_observation"
-            }
-
-        data = observation.get("data")
-
-        prediction = self.prediction.predict(
-            data
-        )
-
-        return {
-            "status": "predicted",
-            "prediction": prediction
-        }
-
-    def compare(
-        self,
-        prediction,
-        actual
-    ):
-        """
-        Compare prediction against an explicitly
-        supplied actual outcome.
-        """
-
-        difference = self.difference.calculate(
-            prediction,
-            actual
-        )
-
-        return {
-            "status": "compared",
-            "prediction": prediction,
-            "actual": actual,
-            "difference": difference
-        }
-
-    def learn(self, difference):
-        """
-        Convert prediction error into a
-        learning signal.
-
-        The existing LearningEngine accepts
-        only the prediction difference.
+        Convert input into an observation.
         """
 
         try:
-            result = self.learning.learn(
-                difference
+            result = self.perception.process(
+                input_data
             )
 
         except Exception as error:
             return {
                 "status": "failed",
-                "reason": "learning_engine_error",
+                "reason": "perception_failed",
                 "error": str(error)
             }
 
+        if not isinstance(result, dict):
+            result = {
+                "observation": result
+            }
+
+        observation = dict(result)
+
+        self.last_observation = observation
+        self.history.append(observation)
+
         return {
-            "status": "learned",
-            "result": result
+            "status": "perceived",
+            "observation": observation
         }
 
-    def run(
-        self,
-        text=None,
-        voice=None,
-        image=None,
-        video=None
-    ):
+    def perceive_text(self, text):
         """
-        Run observation → prediction.
-
-        No actual outcome is invented.
-        No learning occurs in this method.
+        Process text input.
         """
 
-        observation = self.observe(
-            text=text,
-            voice=voice,
-            image=image,
-            video=video
+        if not isinstance(text, str):
+            return {
+                "status": "rejected",
+                "reason": "invalid_text"
+            }
+
+        if not text.strip():
+            return {
+                "status": "rejected",
+                "reason": "empty_text"
+            }
+
+        return self.perceive({
+            "type": "text",
+            "text": text
+        })
+
+    def perceive_audio(self, audio):
+        """
+        Process audio input.
+
+        The audio object is passed to the perception
+        engine without inventing a transcription.
+        """
+
+        return self.perceive({
+            "type": "audio",
+            "audio": audio
+        })
+
+    def perceive_camera(self, frame):
+        """
+        Process a camera frame.
+        """
+
+        return self.perceive({
+            "type": "camera",
+            "frame": frame
+        })
+
+    def perceive_video(self, frame):
+        """
+        Process a video frame.
+        """
+
+        return self.perceive({
+            "type": "video",
+            "frame": frame
+        })
+
+    def get_last_observation(self):
+        """
+        Return the latest observation.
+        """
+
+        if self.last_observation is None:
+            return None
+
+        return dict(
+            self.last_observation
         )
 
-        if observation["status"] != "observation_created":
-            return observation
+    def get_history(self):
+        """
+        Return perception history.
+        """
 
-        prediction = self.predict(
-            observation
-        )
+        return [
+            dict(item)
+            for item in self.history
+        ]
 
-        if prediction["status"] != "predicted":
-            return prediction
+    def clear_history(self):
+        """
+        Clear stored perception history.
+        """
+
+        self.history.clear()
+        self.last_observation = None
 
         return {
-            "status": "predicted",
-            "observation": observation,
-            "prediction": prediction
+            "status": "cleared"
         }
 
-    def run_with_actual(
-        self,
-        actual,
-        text=None,
-        voice=None,
-        image=None,
-        video=None
-    ):
+    def get_history_size(self):
         """
-        Run the complete cognitive learning cycle.
-
-        Input
-          ↓
-        Observation
-          ↓
-        Prediction
-          ↓
-        Actual Outcome
-          ↓
-        Difference
-          ↓
-        Learning Signal
+        Return number of stored observations.
         """
 
-        observation = self.observe(
-            text=text,
-            voice=voice,
-            image=image,
-            video=video
-        )
+        return len(self.history)
 
-        if observation["status"] != "observation_created":
-            return observation
-
-        prediction = self.predict(
-            observation
-        )
-
-        if prediction["status"] != "predicted":
-            return prediction
-
-        comparison = self.compare(
-            prediction["prediction"],
-            actual
-        )
-
-        learning = self.learn(
-            comparison["difference"]
-        )
+    def get_configuration(self):
+        """
+        Return pipeline configuration.
+        """
 
         return {
-            "status": "completed",
-            "observation": observation,
-            "prediction": prediction,
-            "comparison": comparison,
-            "learning": learning
+            "perception_engine": type(
+                self.perception
+            ).__name__,
+            "history_size": len(
+                self.history
+            ),
+            "has_last_observation": (
+                self.last_observation is not None
+            )
         }
