@@ -14,9 +14,6 @@ Actual Outcome
 Difference
     ↓
 Learning Signal
-
-These tests verify integration with the existing
-LearningEngine contract.
 """
 
 from core.cognitive_pipeline import CognitivePipeline
@@ -26,8 +23,7 @@ def test_learning_integration_zero_error():
     pipeline = CognitivePipeline()
 
     result = pipeline.run_with_actual(
-        actual={}
-        ,
+        actual={"text": "test"},
         text="test"
     )
 
@@ -103,11 +99,12 @@ def test_learning_signal_matches_difference():
     pipeline = CognitivePipeline()
 
     result = pipeline.run_with_actual(
-        actual=100,
+        actual={"text": "different"},
         text="input"
     )
 
     difference = result["comparison"]["difference"]
+
     learning_signal = (
         result["learning"]["result"]["learning_signal"]
     )
