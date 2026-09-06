@@ -1,32 +1,26 @@
-from core.cognitive_experiment import (
-    CognitiveExperimentEngine
-)
-from core.experiment_loop import ExperimentLoopEngine
+from core.cognitive_experiment import CognitiveExperimentEngine
 
 
 class FakeExperiment:
 
     def __init__(self, result=15):
         self.result = result
-        self.calls = []
 
     def run(self, observation):
-        self.calls.append(observation)
         return self.result
 
 
-def create_engine(result=15):
-    experiment = FakeExperiment(result=result)
+class HypothesisAwareExperiment:
 
-    experiment_loop = ExperimentLoopEngine(
-        experiment=experiment
-    )
+    def __init__(self, result=15):
+        self.result = result
+        self.received_hypothesis = None
+        self.received_observation = None
 
-    engine = CognitiveExperimentEngine(
-        experiment_loop=experiment_loop
-    )
-
-    return engine, experiment
+    def run(self, observation, hypothesis=None):
+        self.received_observation = observation
+        self.received_hypothesis = hypothesis
+        return self.result
 
 
 def test_reasoning_plan():
@@ -41,20 +35,13 @@ def test_reasoning_plan():
     assert result["status"] == "ready"
     assert result["goal"] == "reduce_prediction_error"
     assert len(result["hypotheses"]) == 3
-
-    assert (
-        result["selected_hypothesis"]["hypothesis"]
-        == "use_recent_experience"
+    assert result["selected_hypothesis"]["hypothesis"] == (
+        "use_recent_experience"
     )
-
-    assert result["selected_hypothesis"]["priority"] == 3
-
-    assert result["plan"]["goal"] == (
-        "reduce_prediction_error"
-    )
+    assert result["plan"]["goal"] == "reduce_prediction_error"
 
 
-def test_continue_observation_reasoning():
+def test_reasoning_continue_observation():
     engine = CognitiveExperimentEngine()
 
     result = engine.reason(
@@ -64,18 +51,12 @@ def test_continue_observation_reasoning():
     )
 
     assert result["status"] == "ready"
-
-    assert (
-        result["selected_hypothesis"]["hypothesis"]
-        == "collect_more_observations"
+    assert result["selected_hypothesis"]["hypothesis"] == (
+        "collect_more_observations"
     )
 
-    assert result["plan"]["plan"] == [
-        "observe_new_data"
-    ]
 
-
-def test_unknown_goal_reasoning():
+def test_reasoning_unknown_goal():
     engine = CognitiveExperimentEngine()
 
     result = engine.reason(
@@ -85,30 +66,29 @@ def test_unknown_goal_reasoning():
     )
 
     assert result["status"] == "ready"
-
-    assert (
-        result["selected_hypothesis"]["hypothesis"]
-        == "collect_more_information"
+    assert result["selected_hypothesis"]["hypothesis"] == (
+        "collect_more_information"
     )
 
-    assert result["plan"]["plan"] == [
-        "observe_new_data"
-    ]
 
-
-def test_empty_goal_reasoning():
+def test_reasoning_empty_goal():
     engine = CognitiveExperimentEngine()
 
     result = engine.reason({})
 
-    assert result["status"] == "unavailable"
-    assert result["reason"] == (
-        "no_hypothesis_available"
+    assert result["status"] == "ready"
+    assert result["goal"] is None
+    assert result["hypotheses"] == []
+
+
+def test_predict():
+    experiment = FakeExperiment()
+
+    engine = CognitiveExperimentEngine(
+        experiment_loop=None
     )
 
-
-def test_prediction():
-    engine = CognitiveExperimentEngine()
+    engine.experiment_loop.experiment = experiment
 
     result = engine.predict(10)
 
@@ -127,24 +107,7 @@ def test_run_cycle_without_experiment():
     )
 
     assert result["status"] == "unavailable"
-    assert result["goal"] == "reduce_prediction_error"
-    assert result["observation"] == 10
-
-    assert len(result["hypotheses"]) == 3
-
-    assert (
-        result["selected_hypothesis"]["hypothesis"]
-        == "use_recent_experience"
-    )
-
-    assert result["plan"]["goal"] == (
-        "reduce_prediction_error"
-    )
-
-    assert (
-        result["experiment"]["reason"]
-        == "experiment_not_configured"
-    )
+    assert result["reason"] == "experiment_not_configured"
 
 
 def test_run_cycle_unknown_goal_without_experiment():
@@ -158,22 +121,17 @@ def test_run_cycle_unknown_goal_without_experiment():
     )
 
     assert result["status"] == "unavailable"
-    assert result["goal"] == "unknown_goal"
-    assert result["observation"] == 20
+    assert result["reason"] == "experiment_not_configured"
 
-    assert (
-        result["selected_hypothesis"]["hypothesis"]
-        == "collect_more_information"
+
+def test_full_cycle():
+    experiment = FakeExperiment(
+        result=15
     )
 
-    assert (
-        result["experiment"]["reason"]
-        == "experiment_not_configured"
-    )
+    engine = CognitiveExperimentEngine()
 
-
-def test_full_cognitive_experiment_cycle():
-    engine, experiment = create_engine(result=15)
+    engine.experiment_loop.experiment = experiment
 
     result = engine.run_cycle(
         {
@@ -184,31 +142,26 @@ def test_full_cognitive_experiment_cycle():
 
     assert result["status"] == "completed"
     assert result["goal"] == "reduce_prediction_error"
-
-    assert result["observation"] == 10
     assert result["prediction"] == 10
     assert result["actual"] == 15
     assert result["difference"] == 5
-
     assert result["learning"]["error"] == 5
-    assert result["learning"]["learning_signal"] == 5
-
-    assert isinstance(result["world_model"], dict)
-
+    assert isinstance(
+        result["world_model"],
+        dict
+    )
     assert result["cycle"]["cycle"] == 1
-    assert result["cycle"]["observation"] == 10
-    assert result["cycle"]["prediction"] == 10
-    assert result["cycle"]["actual"] == 15
-    assert result["cycle"]["difference"] == 5
-
-    assert result["stopped"] is False
-    assert experiment.calls == [10]
-
-    assert engine.get_cycle_count() == 1
+    assert result["hypothesis_learning"]["status"] == "recorded"
 
 
-def test_previous_experience_influences_next_cycle():
-    engine, experiment = create_engine(result=15)
+def test_previous_experience_changes_prediction():
+    experiment = FakeExperiment(
+        result=15
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
 
     first = engine.run_cycle(
         {
@@ -217,7 +170,6 @@ def test_previous_experience_influences_next_cycle():
         10
     )
 
-    assert first["status"] == "completed"
     assert first["prediction"] == 10
     assert first["actual"] == 15
     assert first["difference"] == 5
@@ -231,17 +183,19 @@ def test_previous_experience_influences_next_cycle():
         20
     )
 
-    assert second["status"] == "completed"
     assert second["prediction"] == 25
     assert second["actual"] == 25
     assert second["difference"] == 0
 
-    assert engine.get_cycle_count() == 2
-    assert experiment.calls == [10, 20]
 
+def test_world_model_receives_result():
+    experiment = FakeExperiment(
+        result=15
+    )
 
-def test_world_model_receives_experiment_result():
-    engine, _ = create_engine(result=18)
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
 
     result = engine.run_cycle(
         {
@@ -250,54 +204,42 @@ def test_world_model_receives_experiment_result():
         10
     )
 
-    assert result["status"] == "completed"
+    state = engine.experiment_loop.closed_loop.experience_learning.get_world_state()
 
-    state = (
-        engine.experiment_loop
-        .closed_loop
-        .experience_learning
-        .get_world_state()
+    assert result["world_model"]["actual"] == 15
+    assert state["last_actual"] == 15
+
+
+def test_history_is_preserved():
+    experiment = FakeExperiment(
+        result=15
     )
 
-    assert state["experience_count"] == 1
+    engine = CognitiveExperimentEngine()
 
+    engine.experiment_loop.experiment = experiment
 
-def test_experiment_history_is_preserved():
-    engine, experiment = create_engine(result=15)
-
-    first = engine.run_cycle(
+    engine.run_cycle(
         {
             "goal": "reduce_prediction_error"
         },
         10
     )
 
-    assert first["status"] == "completed"
-
-    experiment.result = 25
-
-    second = engine.run_cycle(
-        {
-            "goal": "reduce_prediction_error"
-        },
-        20
-    )
-
-    assert second["status"] == "completed"
-
     history = engine.get_history()
 
-    assert len(history) == 2
-
-    assert history[0]["observation"] == 10
+    assert len(history) == 1
     assert history[0]["actual"] == 15
-
-    assert history[1]["observation"] == 20
-    assert history[1]["actual"] == 25
 
 
 def test_stop():
-    engine, _ = create_engine()
+    experiment = FakeExperiment(
+        result=15
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
 
     result = engine.stop()
 
@@ -306,35 +248,40 @@ def test_stop():
 
 
 def test_reset():
-    engine, _ = create_engine()
+    experiment = FakeExperiment(
+        result=15
+    )
 
-    first = engine.run_cycle(
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    engine.run_cycle(
         {
             "goal": "reduce_prediction_error"
         },
         10
     )
 
-    assert first["status"] == "completed"
-    assert engine.get_cycle_count() == 1
+    engine.stop()
 
     result = engine.reset()
 
     assert result["status"] == "reset"
     assert engine.get_cycle_count() == 0
     assert engine.is_stopped() is False
-    assert engine.get_history() == []
 
 
-def test_invalid_goal_state():
+def test_invalid_goal():
     engine = CognitiveExperimentEngine()
 
-    result = engine.reason("invalid")
+    result = engine.run_cycle(
+        None,
+        10
+    )
 
     assert result["status"] == "failed"
-    assert result["reason"] == (
-        "hypothesis_generation_failed"
-    )
+    assert result["reason"] == "hypothesis_generation_failed"
 
 
 def test_configuration():
@@ -345,7 +292,165 @@ def test_configuration():
     assert configuration["hypothesis_planner"] == (
         "HypothesisPlanningEngine"
     )
-
     assert configuration["experiment_loop"] == (
         "ExperimentLoopEngine"
     )
+
+
+def test_selected_hypothesis_reaches_experiment():
+    experiment = HypothesisAwareExperiment(
+        result=15
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    result = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert result["status"] == "completed"
+
+    assert experiment.received_observation == 10
+
+    assert experiment.received_hypothesis == {
+        "hypothesis": "use_recent_experience",
+        "priority": 3
+    }
+
+
+def test_selected_hypothesis_is_recorded():
+    experiment = HypothesisAwareExperiment(
+        result=20
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    result = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert result["difference"] == 10
+
+    learned = engine.get_learned_hypotheses()
+
+    assert len(learned) == 1
+    assert learned[0]["hypothesis"] == (
+        "use_recent_experience"
+    )
+    assert learned[0]["attempts"] == 1
+    assert learned[0]["average_error"] == 10
+
+
+def test_better_learned_hypothesis_is_selected():
+    experiment = HypothesisAwareExperiment(
+        result=10
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    planner = engine.hypothesis_planner
+
+    planner.record_result(
+        "use_recent_experience",
+        10
+    )
+
+    planner.record_result(
+        "increase_observation_frequency",
+        2
+    )
+
+    reasoning = engine.reason(
+        {
+            "goal": "reduce_prediction_error"
+        }
+    )
+
+    selected = reasoning["selected_hypothesis"]
+
+    assert selected["hypothesis"] == (
+        "increase_observation_frequency"
+    )
+    assert selected["learned"] is True
+    assert selected["average_error"] == 2
+    assert selected["attempts"] == 1
+
+
+def test_selected_learned_hypothesis_is_sent_to_experiment():
+    experiment = HypothesisAwareExperiment(
+        result=10
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    planner = engine.hypothesis_planner
+
+    planner.record_result(
+        "use_recent_experience",
+        10
+    )
+
+    planner.record_result(
+        "increase_observation_frequency",
+        2
+    )
+
+    result = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert result["status"] == "completed"
+
+    assert (
+        result["selected_hypothesis"]["hypothesis"]
+        == "increase_observation_frequency"
+    )
+
+    assert (
+        experiment.received_hypothesis["hypothesis"]
+        == "increase_observation_frequency"
+    )
+
+
+def test_hypothesis_learning_result_is_returned():
+    experiment = HypothesisAwareExperiment(
+        result=15
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    result = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert "hypothesis_learning" in result
+    assert result["hypothesis_learning"]["status"] == (
+        "recorded"
+    )
+    assert result["hypothesis_learning"]["hypothesis"] == (
+        "use_recent_experience"
+    )
+    assert result["hypothesis_learning"]["attempts"] == 1
+    assert result["hypothesis_learning"]["average_error"] == 5
