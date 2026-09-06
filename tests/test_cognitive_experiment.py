@@ -456,3 +456,47 @@ def test_hypothesis_learning_result_is_returned():
     )
     assert result["hypothesis_learning"]["attempts"] == 1
     assert result["hypothesis_learning"]["average_error"] == 5
+
+
+def test_hypothesis_learning_improves_selection_across_cycles():
+    experiment = HypothesisAwareExperiment(
+        result=20
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    first = engine.run_cycle(
+        {
+            "goal": "reduce_prediction_error"
+        },
+        10
+    )
+
+    assert first["status"] == "completed"
+    assert first["selected_hypothesis"]["hypothesis"] == (
+        "use_recent_experience"
+    )
+    assert first["difference"] == 10
+
+    planner = engine.hypothesis_planner
+
+    planner.record_result(
+        "increase_observation_frequency",
+        2
+    )
+
+    reasoning = engine.reason(
+        {
+            "goal": "reduce_prediction_error"
+        }
+    )
+
+    selected = reasoning["selected_hypothesis"]
+
+    assert selected["hypothesis"] == (
+        "increase_observation_frequency"
+    )
+    assert selected["learned"] is True
+    assert selected["average_error"] == 2
