@@ -1,13 +1,14 @@
 """
 Sudha AI - Memory Engine
 
-Version 0.2
+Version 0.3
 
 Provides bounded structured memory for Sudha AI.
 
 Capabilities:
 - Store experiences
 - Retrieve stored experiences
+- Backward-compatible retrieve_all()
 - Preserve learning signals
 - Bounded memory size
 - Deterministic behavior
@@ -74,6 +75,16 @@ class MemoryEngine:
             dict(memory)
             for memory in self._memories
         ]
+
+    def retrieve_all(self):
+        """
+        Backward-compatible memory retrieval.
+
+        Existing cognitive components use this
+        method to access previous experiences.
+        """
+
+        return self.retrieve()
 
     def clear(self):
         """
