@@ -1,7 +1,7 @@
 """
 Sudha AI - Hierarchical Memory
 
-Version 0.1
+Version 0.2
 
 Memory hierarchy:
 
@@ -18,7 +18,10 @@ Design goals:
 - Keep every memory bounded.
 - Preserve insertion order.
 - Return copies instead of internal objects.
-- Deterministic behavior.
+- Support deterministic retrieval.
+- Support retrieval by exact field matching.
+- Support retrieval across selected memory layers.
+- Preserve the existing API.
 - No fake learning.
 - No external side effects.
 """
@@ -109,6 +112,57 @@ class HierarchicalMemory:
             for memory in storage
         ]
 
+    def _matches(self, memory, criteria):
+        if not isinstance(criteria, dict):
+            raise TypeError(
+                "criteria must be a dictionary"
+            )
+
+        for key, expected_value in criteria.items():
+            if key not in memory:
+                return False
+
+            if memory[key] != expected_value:
+                return False
+
+        return True
+
+    def _retrieve_matching(
+        self,
+        storage,
+        criteria,
+        limit=None,
+    ):
+        if not isinstance(criteria, dict):
+            raise TypeError(
+                "criteria must be a dictionary"
+            )
+
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise TypeError(
+                    "limit must be an integer"
+                )
+
+            if limit < 0:
+                raise ValueError(
+                    "limit must be zero or greater"
+                )
+
+        matches = []
+
+        for memory in storage:
+            if self._matches(memory, criteria):
+                matches.append(dict(memory))
+
+        if limit == 0:
+            return []
+
+        if limit is not None:
+            return matches[-limit:]
+
+        return matches
+
     def store_working(self, memory):
         return self._store(
             self._working,
@@ -156,6 +210,111 @@ class HierarchicalMemory:
         return self._retrieve(
             self._procedural
         )
+
+    def retrieve_working_matching(
+        self,
+        criteria,
+        limit=None,
+    ):
+        return self._retrieve_matching(
+            self._working,
+            criteria,
+            limit,
+        )
+
+    def retrieve_episodic_matching(
+        self,
+        criteria,
+        limit=None,
+    ):
+        return self._retrieve_matching(
+            self._episodic,
+            criteria,
+            limit,
+        )
+
+    def retrieve_semantic_matching(
+        self,
+        criteria,
+        limit=None,
+    ):
+        return self._retrieve_matching(
+            self._semantic,
+            criteria,
+            limit,
+        )
+
+    def retrieve_procedural_matching(
+        self,
+        criteria,
+        limit=None,
+    ):
+        return self._retrieve_matching(
+            self._procedural,
+            criteria,
+            limit,
+        )
+
+    def retrieve_matching(
+        self,
+        criteria,
+        memory_types=None,
+        limit=None,
+    ):
+        if not isinstance(criteria, dict):
+            raise TypeError(
+                "criteria must be a dictionary"
+            )
+
+        if memory_types is None:
+            selected_types = self.MEMORY_TYPES
+        else:
+            if not isinstance(
+                memory_types,
+                (list, tuple),
+            ):
+                raise TypeError(
+                    "memory_types must be a list or tuple"
+                )
+
+            for memory_type in memory_types:
+                if memory_type not in self.MEMORY_TYPES:
+                    raise ValueError(
+                        "unknown_memory_type"
+                    )
+
+            selected_types = tuple(
+                memory_types
+            )
+
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise TypeError(
+                    "limit must be an integer"
+                )
+
+            if limit < 0:
+                raise ValueError(
+                    "limit must be zero or greater"
+                )
+
+        result = {}
+
+        for memory_type in selected_types:
+            storage = getattr(
+                self,
+                f"_{memory_type}",
+            )
+
+            result[memory_type] = (
+                self._retrieve_matching(
+                    storage,
+                    criteria,
+                    limit,
+                )
+            )
+
+        return result
 
     def retrieve_all(self):
         return {
