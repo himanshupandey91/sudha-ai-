@@ -1,22 +1,23 @@
 """
 Sudha AI - Prediction / Adaptive Predictor Integration Tests
 
-Step 61-C
+Step 61-F
 
 Validates:
 
-PredictionEngine
+Static Prediction
     ↓
-AdaptivePredictor
+Adaptive Predictor
     ↓
 Prediction
     ↓
 Actual Result
     ↓
-Adaptive Learning
+Prediction Error
     ↓
-Updated Prediction
+Gradual Adaptive Learning
 """
+
 
 from core.prediction import PredictionEngine
 from core.adaptive_predictor import AdaptivePredictor
@@ -47,7 +48,7 @@ def test_prediction_engine_uses_adaptive_prediction():
     assert engine.predict(
         0,
         hypothesis="hypothesis_a"
-    ) == 20
+    ) == 15
 
 
 def test_prediction_engine_learns_from_actual_result():
@@ -72,12 +73,17 @@ def test_prediction_engine_learns_from_actual_result():
 
     assert adaptive.predict(
         "hypothesis_a"
-    ) == 20
+    ) == 15
 
 
 def test_adaptive_prediction_has_priority_over_static_prediction():
     adaptive = AdaptivePredictor(
         learning_rate=0.5
+    )
+
+    adaptive.set_prediction(
+        "hypothesis_a",
+        10
     )
 
     adaptive.update(
@@ -97,7 +103,7 @@ def test_adaptive_prediction_has_priority_over_static_prediction():
         hypothesis="hypothesis_a"
     )
 
-    assert prediction == 30
+    assert prediction == 20
 
 
 def test_unknown_adaptive_hypothesis_falls_back_to_static_prediction():
@@ -137,3 +143,80 @@ def test_update_from_actual_is_alias_for_adaptive_learning():
         0,
         hypothesis="hypothesis_a"
     ) == 25
+
+
+def test_prediction_moves_gradually_toward_actual():
+    adaptive = AdaptivePredictor(
+        learning_rate=0.5
+    )
+
+    engine = PredictionEngine(
+        hypothesis_predictions={
+            "hypothesis_a": 10
+        },
+        adaptive_predictor=adaptive
+    )
+
+    first = engine.learn(
+        "hypothesis_a",
+        20
+    )
+
+    assert first["result"]["prediction"] == 15
+
+    second = engine.learn(
+        "hypothesis_a",
+        20
+    )
+
+    assert second["result"]["prediction"] == 17.5
+
+    third = engine.learn(
+        "hypothesis_a",
+        20
+    )
+
+    assert third["result"]["prediction"] == 18.75
+
+
+def test_adaptive_learning_reports_prediction_error():
+    adaptive = AdaptivePredictor(
+        learning_rate=0.5
+    )
+
+    adaptive.set_prediction(
+        "hypothesis_a",
+        10
+    )
+
+    result = adaptive.update(
+        "hypothesis_a",
+        20
+    )
+
+    assert result["error"] == 10
+    assert result["prediction"] == 15
+
+
+def test_static_prediction_is_used_as_adaptive_initial_state():
+    adaptive = AdaptivePredictor(
+        learning_rate=0.5
+    )
+
+    engine = PredictionEngine(
+        hypothesis_predictions={
+            "hypothesis_a": 10
+        },
+        adaptive_predictor=adaptive
+    )
+
+    assert adaptive.predict(
+        "hypothesis_a"
+    ) == 10
+
+    result = engine.learn(
+        "hypothesis_a",
+        20
+    )
+
+    assert result["result"]["prediction"] == 15
