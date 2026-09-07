@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Hypothesis Planning Engine
 
-Version 0.3
+Version 0.4
 
 Connects:
 
@@ -17,15 +17,18 @@ Adaptive Selection
   ↓
 Plan
 
-Version 0.3:
-- Integrates HypothesisLearningEngine
-- Uses learned performance when available
-- Supports deterministic exploration of unseen hypotheses
-- Keeps static priority as fallback when exploration is disabled
-- Does not invent experiment results
-- Deterministic behavior
-- Bounded candidate generation
-- No external side effects
+Version 0.4:
+- Integrates HypothesisLearningEngine.
+- Uses learned performance when available.
+- Considers learned hypotheses even when they are not
+  present in the current static candidate list.
+- Supports deterministic exploration of unseen hypotheses.
+- Uses lower prediction error as the primary learned preference.
+- Keeps static priority as fallback.
+- Does not invent experiment results.
+- Deterministic behavior.
+- Bounded candidate generation.
+- No external side effects.
 """
 
 from core.hypothesis import HypothesisEngine
@@ -101,10 +104,40 @@ class HypothesisPlanningEngine:
                 "reason": "no_hypothesis_available"
             }
 
+        candidate_map = {}
+
+        for candidate in hypotheses:
+            name = candidate.get("hypothesis")
+
+            if not isinstance(name, str):
+                continue
+
+            candidate_map[name] = dict(candidate)
+
+        learned_records = (
+            self.hypothesis_learning.rank()
+        )
+
+        for learned in learned_records:
+            name = learned.get("hypothesis")
+
+            if not isinstance(name, str):
+                continue
+
+            if name not in candidate_map:
+                candidate_map[name] = {
+                    "hypothesis": name,
+                    "priority": 0
+                }
+
+        all_candidates = list(
+            candidate_map.values()
+        )
+
         learned = []
         unseen = []
 
-        for candidate in hypotheses:
+        for candidate in all_candidates:
             name = candidate.get("hypothesis")
 
             if not isinstance(name, str):
@@ -123,7 +156,10 @@ class HypothesisPlanningEngine:
         if self.exploration and unseen:
             selected = max(
                 unseen,
-                key=lambda item: item["priority"]
+                key=lambda item: item.get(
+                    "priority",
+                    0
+                )
             )
 
             return {
@@ -151,7 +187,7 @@ class HypothesisPlanningEngine:
                 "hypothesis": {
                     "hypothesis": best["hypothesis"],
                     "priority": self._find_priority(
-                        hypotheses,
+                        all_candidates,
                         best["hypothesis"]
                     ),
                     "learned": True,
@@ -165,8 +201,11 @@ class HypothesisPlanningEngine:
             }
 
         best = max(
-            hypotheses,
-            key=lambda item: item["priority"]
+            all_candidates,
+            key=lambda item: item.get(
+                "priority",
+                0
+            )
         )
 
         return {
@@ -259,7 +298,7 @@ class HypothesisPlanningEngine:
     ):
         for candidate in hypotheses:
             if candidate.get("hypothesis") == hypothesis_name:
-                return candidate.get("priority")
+                return candidate.get("priority", 0)
 
         return 0
 
@@ -275,4 +314,4 @@ class HypothesisPlanningEngine:
                 self.hypothesis_learning
             ).__name__,
             "exploration": self.exploration
-        }
+          }
