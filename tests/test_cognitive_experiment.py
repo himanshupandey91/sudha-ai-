@@ -1,3 +1,7 @@
+"""
+Tests for Sudha AI Cognitive Experiment Engine.
+"""
+
 from core.cognitive_experiment import CognitiveExperimentEngine
 
 
@@ -26,6 +30,8 @@ def test_engine_configuration():
 
     assert config["hypothesis_planner"] == "HypothesisPlanningEngine"
     assert config["experiment_loop"] == "ExperimentLoopEngine"
+    assert config["prediction_engine"] == "PredictionEngine"
+    assert config["adaptive_predictor"] == "AdaptivePredictor"
 
 
 def test_reasoning_returns_ready_plan():
@@ -511,6 +517,10 @@ def test_real_learning_changes_next_cycle_without_manual_injection():
     assert first["actual"] == 20
     assert first["difference"] == 10
 
+    assert first[
+        "hypothesis_prediction_learning"
+    ]["status"] == "learned"
+
     learned_after_first = (
         engine.get_learned_hypotheses()
     )
@@ -532,7 +542,21 @@ def test_real_learning_changes_next_cycle_without_manual_injection():
 
     assert second["status"] == "completed"
 
+    assert second["selected_hypothesis"]["hypothesis"] == (
+        "use_recent_experience"
+    )
+
+    assert second["selected_hypothesis"]["learned"] is True
+
     assert second["actual"] == 10
+
+    assert second["prediction"] == 15
+
+    assert second["difference"] == 5
+
+    assert second[
+        "hypothesis_prediction_learning"
+    ]["status"] == "learned"
 
     learned_after_second = (
         engine.get_learned_hypotheses()
@@ -551,10 +575,4 @@ def test_real_learning_changes_next_cycle_without_manual_injection():
 
     assert selected_record["attempts"] == 2
 
-    assert selected_record["average_error"] == 5.0
-
-    assert second["selected_hypothesis"]["learned"] is True
-
-    assert second["selected_hypothesis"]["hypothesis"] == (
-        "use_recent_experience"
-    )
+    assert selected_record["average_error"] == 7.5
