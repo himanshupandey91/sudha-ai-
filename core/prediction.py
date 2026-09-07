@@ -1,17 +1,19 @@
 """
 Sudha AI - Prediction Engine
 
-Version 0.3
+Version 0.4
 
 The prediction engine makes predictions from observations
 and can optionally learn from observed results.
 
-Version 0.3:
+Version 0.4:
 - Preserves legacy observation-based prediction.
 - Preserves static hypothesis predictions.
 - Supports AdaptivePredictor integration.
+- Seeds adaptive predictions from static predictions.
 - Uses learned predictions when available.
-- Provides a learning boundary for observed results.
+- Learns gradually from observed actual results.
+- Provides a clear prediction -> actual -> learning boundary.
 - Keeps backward compatibility with predict(observation).
 - Does not force a specific AI/ML model.
 """
@@ -73,6 +75,12 @@ class PredictionEngine:
                 None
             )
 
+            seeder = getattr(
+                adaptive_predictor,
+                "set_prediction",
+                None
+            )
+
             if not callable(predictor):
                 raise ValueError(
                     "adaptive_predictor must provide "
@@ -85,6 +93,12 @@ class PredictionEngine:
                     "a callable update method"
                 )
 
+            if not callable(seeder):
+                raise ValueError(
+                    "adaptive_predictor must provide "
+                    "a callable set_prediction method"
+                )
+
         self.hypothesis_predictions = dict(
             hypothesis_predictions
         )
@@ -92,6 +106,47 @@ class PredictionEngine:
         self.adaptive_predictor = (
             adaptive_predictor
         )
+
+        self._seed_adaptive_predictions()
+
+    def _seed_adaptive_predictions(self):
+        """
+        Seed the adaptive predictor with static
+        hypothesis predictions.
+
+        Existing learned predictions are preserved.
+
+        Example:
+
+        static = 10
+
+        adaptive already has:
+            15
+
+        → keep 15
+
+        adaptive has no value:
+
+        → seed 10
+        """
+
+        if self.adaptive_predictor is None:
+            return
+
+        for hypothesis, prediction in (
+            self.hypothesis_predictions.items()
+        ):
+            existing = (
+                self.adaptive_predictor.predict(
+                    hypothesis
+                )
+            )
+
+            if existing is None:
+                self.adaptive_predictor.set_prediction(
+                    hypothesis,
+                    prediction
+                )
 
     def predict(
         self,
@@ -148,8 +203,16 @@ class PredictionEngine:
         """
         Learn from an observed actual result.
 
-        The result is delegated to AdaptivePredictor
-        when adaptive learning is enabled.
+        The adaptive predictor starts from the
+        existing static prediction when necessary.
+
+        Example:
+
+        static prediction = 10
+        actual = 20
+        learning rate = 0.5
+
+        updated prediction = 15
         """
 
         if self.adaptive_predictor is None:
@@ -169,12 +232,29 @@ class PredictionEngine:
             }
 
         try:
+
+            existing = (
+                self.adaptive_predictor.predict(
+                    name
+                )
+            )
+
+            if (
+                existing is None
+                and name in self.hypothesis_predictions
+            ):
+                self.adaptive_predictor.set_prediction(
+                    name,
+                    self.hypothesis_predictions[name]
+                )
+
             result = self.adaptive_predictor.update(
                 name,
                 actual
             )
 
         except Exception as error:
+
             return {
                 "status": "failed",
                 "reason": "adaptive_learning_failed",
@@ -232,7 +312,7 @@ class PredictionEngine:
         return None
 
     def get_configuration(self):
-        configuration = {
+        return {
             "hypothesis_predictions": dict(
                 self.hypothesis_predictions
             ),
@@ -244,5 +324,3 @@ class PredictionEngine:
                 else None
             )
         }
-
-        return configuration
