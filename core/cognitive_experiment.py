@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.4
+Version 0.5
 
 Connects:
 Goal
@@ -13,6 +13,8 @@ Hypothesis Selection
 Plan
     ↓
 Selected Hypothesis
+    ↓
+Hypothesis-Aware Prediction
     ↓
 ExperimentLoopEngine
     ↓
@@ -26,10 +28,11 @@ Memory
     ↓
 World Model
 
-Version 0.4:
+Version 0.5:
+- Passes the selected hypothesis into prediction.
+- Preserves legacy prediction compatibility.
 - Delegates experiment execution to ExperimentLoopEngine.
 - Passes the selected hypothesis through the experiment-loop boundary.
-- Preserves compatibility with legacy experiments.
 - Records the selected hypothesis after the observed result is known.
 - Does not invent experiment results.
 - Keeps hypothesis attribution explicit.
@@ -66,10 +69,29 @@ class CognitiveExperimentEngine:
             goal_state
         )
 
-    def predict(self, observation):
-        return self.experiment_loop.predict(
-            observation
-        )
+    def predict(
+        self,
+        observation,
+        hypothesis=None
+    ):
+        """
+        Generate a prediction using the selected hypothesis.
+
+        Backward compatibility:
+        - predict(observation)
+        - predict(observation, hypothesis)
+        """
+
+        try:
+            return self.experiment_loop.predict(
+                observation,
+                hypothesis=hypothesis
+            )
+
+        except TypeError:
+            return self.experiment_loop.predict(
+                observation
+            )
 
     def run_experiment(
         self,
@@ -102,7 +124,8 @@ class CognitiveExperimentEngine:
         )
 
         prediction = self.predict(
-            observation
+            observation,
+            hypothesis=selected_hypothesis
         )
 
         if prediction["status"] != "predicted":
