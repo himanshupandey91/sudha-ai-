@@ -481,3 +481,80 @@ def test_learned_hypothesis_is_used_again_in_next_cycle():
     assert selected_record is not None
     assert selected_record["attempts"] == 2
     assert selected_record["average_error"] == 1.0
+
+
+def test_real_learning_changes_next_cycle_without_manual_injection():
+    experiment = HypothesisAwareExperiment(
+        result=20
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    goal = {
+        "goal": "reduce_prediction_error"
+    }
+
+    first = engine.run_cycle(
+        goal,
+        10
+    )
+
+    assert first["status"] == "completed"
+
+    assert first["selected_hypothesis"]["hypothesis"] == (
+        "use_recent_experience"
+    )
+
+    assert first["prediction"] == 10
+    assert first["actual"] == 20
+    assert first["difference"] == 10
+
+    learned_after_first = (
+        engine.get_learned_hypotheses()
+    )
+
+    assert len(learned_after_first) == 1
+
+    assert learned_after_first[0]["hypothesis"] == (
+        "use_recent_experience"
+    )
+
+    assert learned_after_first[0]["attempts"] == 1
+
+    experiment.result = 10
+
+    second = engine.run_cycle(
+        goal,
+        10
+    )
+
+    assert second["status"] == "completed"
+
+    assert second["actual"] == 10
+
+    learned_after_second = (
+        engine.get_learned_hypotheses()
+    )
+
+    selected_record = None
+
+    for record in learned_after_second:
+        if record["hypothesis"] == (
+            "use_recent_experience"
+        ):
+            selected_record = record
+            break
+
+    assert selected_record is not None
+
+    assert selected_record["attempts"] == 2
+
+    assert selected_record["average_error"] == 5.0
+
+    assert second["selected_hypothesis"]["learned"] is True
+
+    assert second["selected_hypothesis"]["hypothesis"] == (
+        "use_recent_experience"
+    )
