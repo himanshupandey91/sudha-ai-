@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Cognitive Cycle
 
-Version 0.3
+Version 0.4
 
 Adaptive reasoning cycle:
 
@@ -27,19 +27,23 @@ World Model
     ↓
 Hypothesis Update
     ↓
+Feedback
+    ↓
 Next Cycle
 
-The controller supports:
-- CognitiveExperimentEngine.run_cycle(goal, observation)
-- reason(goal, context)
-- reason(goal)
-
-Safety:
-- bounded cycles
-- explicit stop()
-- no uncontrolled infinite loop
-- no fake experiment result generation
+Version 0.4:
+- Supports CognitiveExperimentEngine.run_cycle(goal, observation)
+- Preserves reason(goal, context) compatibility
+- Carries previous cycle feedback into the next real cycle
+- Keeps the original observation stable
+- Allows the cognitive experiment to adapt across cycles
+- Bounded cycles
+- Explicit stop()
+- No uncontrolled infinite loop
+- No fake experiment result generation
+- No external side effects by itself
 """
+
 
 class AdaptiveCognitiveCycle:
 
@@ -58,7 +62,10 @@ class AdaptiveCognitiveCycle:
                 "max_cycles must be greater than zero"
             )
 
-        self.cognitive_experiment = cognitive_experiment
+        self.cognitive_experiment = (
+            cognitive_experiment
+        )
+
         self.max_cycles = max_cycles
         self.history = []
         self.stopped = False
@@ -66,8 +73,16 @@ class AdaptiveCognitiveCycle:
     def stop(self):
         self.stopped = True
 
+        return {
+            "status": "stopped"
+        }
+
     def reset(self):
         self.stopped = False
+
+        return {
+            "status": "reset"
+        }
 
     def is_stopped(self):
         return self.stopped
@@ -75,10 +90,14 @@ class AdaptiveCognitiveCycle:
     def clear_history(self):
         self.history.clear()
 
+        return {
+            "status": "cleared"
+        }
+
     def _extract_observation(self, context):
         """
-        Extract the observation used by the real
-        cognitive experiment cycle.
+        Extract the stable observation used by the
+        real cognitive experiment.
 
         Supported forms:
 
@@ -92,8 +111,8 @@ class AdaptiveCognitiveCycle:
             ...
         }
 
-        In the second form the complete context is
-        treated as the observation.
+        In the second form the complete context
+        becomes the observation.
         """
 
         if not isinstance(context, dict):
@@ -104,11 +123,45 @@ class AdaptiveCognitiveCycle:
 
         return context
 
+    def _build_cycle_context(
+        self,
+        context,
+        previous_result
+    ):
+        """
+        Build context for the next adaptive cycle.
+
+        The original observation remains unchanged.
+
+        Previous cycle feedback is added separately
+        so the cognitive experiment can use the result
+        of the previous cycle.
+        """
+
+        if not isinstance(context, dict):
+            if previous_result is None:
+                return context
+
+            return {
+                "observation": context,
+                "previous_result": previous_result
+            }
+
+        cycle_context = dict(context)
+
+        if previous_result is not None:
+            cycle_context[
+                "previous_result"
+            ] = previous_result
+
+        return cycle_context
+
     def _reason(self, goal, context):
         """
         Backward-compatible reasoning interface.
 
         Supports:
+
         - reason(goal, context)
         - reason(goal)
         """
@@ -121,19 +174,29 @@ class AdaptiveCognitiveCycle:
 
         if not callable(reason):
             raise AttributeError(
-                "cognitive_experiment.reason is not callable"
+                "cognitive_experiment.reason "
+                "is not callable"
             )
 
         try:
-            return reason(goal, context)
+            return reason(
+                goal,
+                context
+            )
 
         except TypeError:
-            return reason(goal)
+            return reason(
+                goal
+            )
 
-    def _run_real_cycle(self, goal, context):
+    def _run_real_cycle(
+        self,
+        goal,
+        context
+    ):
         """
         Execute the real CognitiveExperimentEngine
-        adaptive cycle when run_cycle() is available.
+        adaptive cycle.
 
         Expected interface:
 
@@ -164,18 +227,25 @@ class AdaptiveCognitiveCycle:
     def run_cycle(
         self,
         goal=None,
-        context=None
+        context=None,
+        previous_result=None
     ):
         """
         Execute one adaptive cognitive cycle.
 
         Preferred path:
+
             CognitiveExperimentEngine.run_cycle()
 
         Compatibility path:
+
             reason(goal, context)
             or
             reason(goal)
+
+        previous_result is optional and is used only
+        to provide feedback to compatible reasoning
+        systems.
         """
 
         if self.stopped:
@@ -190,10 +260,14 @@ class AdaptiveCognitiveCycle:
                 "reason": "cognitive_experiment_not_configured"
             }
 
-        goal = goal or {}
-        context = context or {}
+        if goal is None:
+            goal = {}
+
+        if context is None:
+            context = {}
 
         try:
+
             run_cycle = getattr(
                 self.cognitive_experiment,
                 "run_cycle",
@@ -201,17 +275,28 @@ class AdaptiveCognitiveCycle:
             )
 
             if callable(run_cycle):
+
                 result = self._run_real_cycle(
                     goal,
                     context
                 )
+
             else:
+
+                reasoning_context = (
+                    self._build_cycle_context(
+                        context,
+                        previous_result
+                    )
+                )
+
                 result = self._reason(
                     goal,
-                    context
+                    reasoning_context
                 )
 
         except Exception as error:
+
             return {
                 "status": "failed",
                 "reason": "cognitive_experiment_error",
@@ -224,7 +309,9 @@ class AdaptiveCognitiveCycle:
                 "reason": "invalid_cycle_result"
             }
 
-        self.history.append(result)
+        self.history.append(
+            dict(result)
+        )
 
         return result
 
@@ -236,7 +323,15 @@ class AdaptiveCognitiveCycle:
         """
         Run a bounded adaptive cognitive cycle.
 
+        Each real cycle uses the same observation,
+        while the underlying CognitiveExperimentEngine
+        retains learned state.
+
+        The previous result is also carried forward
+        as feedback for compatible reasoning systems.
+
         The loop stops when:
+
         - max_cycles is reached
         - stop() is requested
         - a cycle fails
@@ -246,34 +341,58 @@ class AdaptiveCognitiveCycle:
 
         results = []
 
+        previous_result = None
+
         for cycle in range(
             1,
             self.max_cycles + 1
         ):
 
             if self.is_stopped():
+
                 return {
                     "status": "stopped",
-                    "cycles_completed": len(results),
+                    "cycles_completed": len(
+                        results
+                    ),
                     "results": results
                 }
 
+            cycle_context = (
+                self._build_cycle_context(
+                    context,
+                    previous_result
+                )
+            )
+
             result = self.run_cycle(
                 goal=goal,
-                context=context
+                context=cycle_context,
+                previous_result=previous_result
             )
+
+            result = dict(result)
 
             result["cycle"] = cycle
 
-            results.append(result)
+            results.append(
+                result
+            )
+
+            previous_result = dict(
+                result
+            )
 
             if result.get("status") not in (
                 "completed",
                 "ready"
             ):
+
                 return {
                     "status": "failed",
-                    "cycles_completed": len(results),
+                    "cycles_completed": len(
+                        results
+                    ),
                     "results": results
                 }
 
@@ -285,7 +404,10 @@ class AdaptiveCognitiveCycle:
         }
 
     def get_history(self):
-        return list(self.history)
+        return [
+            dict(result)
+            for result in self.history
+        ]
 
     def get_configuration(self):
         return {
@@ -298,5 +420,7 @@ class AdaptiveCognitiveCycle:
             ),
             "max_cycles": self.max_cycles,
             "stopped": self.stopped,
-            "history_size": len(self.history)
-        }
+            "history_size": len(
+                self.history
+            )
+    }
