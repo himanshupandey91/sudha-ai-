@@ -1,7 +1,7 @@
 """
 Sudha AI - Experience Learning Tests
 
-Version 0.2
+Version 0.3
 
 Tests the complete experience-learning cycle:
 
@@ -15,7 +15,11 @@ Learning
     ↓
 Memory
     ↓
+Hierarchical Memory
+    ↓
 Adaptive Prediction
+    ↓
+World Model
 """
 
 
@@ -51,6 +55,7 @@ def test_complete_learning_cycle():
     difference
     learning signal
     memory
+    hierarchical memory
     """
 
     engine = ExperienceLearningEngine()
@@ -90,6 +95,27 @@ def test_complete_learning_cycle():
     assert (
         result["memory"]["memory"]["difference"]
         == 5
+    )
+
+    hierarchical = result[
+        "hierarchical_memory"
+    ]
+
+    assert hierarchical["status"] == "stored"
+
+    assert (
+        hierarchical["episodic"]["status"]
+        == "stored"
+    )
+
+    assert (
+        hierarchical["semantic"]["status"]
+        == "stored"
+    )
+
+    assert (
+        hierarchical["procedural"]["status"]
+        == "stored"
     )
 
 
@@ -190,11 +216,7 @@ def test_multiple_experiences_update_prediction():
 def test_memory_contains_learning_history():
     """
     Learning experiences should remain available
-    through the memory interface.
-
-    The second experience can have zero error
-    because adaptive prediction may correctly
-    predict the actual outcome.
+    through the compatibility memory interface.
     """
 
     engine = ExperienceLearningEngine()
@@ -247,9 +269,102 @@ def test_memory_size():
     assert engine.get_memory_size() == 2
 
 
+def test_hierarchical_memory_contains_experience():
+    """
+    Completed experiences should be stored in
+    the episodic, semantic and procedural layers.
+    """
+
+    engine = ExperienceLearningEngine()
+
+    engine.run(
+        observation=10,
+        actual=15
+    )
+
+    memory = engine.get_hierarchical_memory()
+
+    assert len(
+        memory["working"]
+    ) == 0
+
+    assert len(
+        memory["episodic"]
+    ) == 1
+
+    assert len(
+        memory["semantic"]
+    ) == 1
+
+    assert len(
+        memory["procedural"]
+    ) == 1
+
+    assert (
+        memory["episodic"][0]["observation"]
+        == 10
+    )
+
+    assert (
+        memory["episodic"][0]["actual"]
+        == 15
+    )
+
+    assert (
+        memory["episodic"][0]["difference"]
+        == 5
+    )
+
+
+def test_hierarchical_memory_sizes():
+    """
+    Hierarchical memory sizes should reflect
+    the number of completed learning experiences.
+    """
+
+    engine = ExperienceLearningEngine()
+
+    assert (
+        engine.get_hierarchical_memory_size()
+        == 0
+    )
+
+    engine.run(
+        observation=10,
+        actual=15
+    )
+
+    assert (
+        engine.get_hierarchical_memory_size()
+        == 3
+    )
+
+    assert (
+        engine.get_hierarchical_memory_size(
+            "episodic"
+        )
+        == 1
+    )
+
+    assert (
+        engine.get_hierarchical_memory_size(
+            "semantic"
+        )
+        == 1
+    )
+
+    assert (
+        engine.get_hierarchical_memory_size(
+            "procedural"
+        )
+        == 1
+    )
+
+
 def test_clear_memory():
     """
-    Clearing memory should remove stored experiences.
+    Clearing memory should remove stored experiences
+    from both memory systems.
     """
 
     engine = ExperienceLearningEngine()
@@ -261,8 +376,56 @@ def test_clear_memory():
 
     assert engine.get_memory_size() == 1
 
+    assert (
+        engine.get_hierarchical_memory_size()
+        == 3
+    )
+
     result = engine.clear_memory()
 
     assert result["status"] == "cleared"
+
     assert engine.get_memory_size() == 0
+
+    assert (
+        engine.get_hierarchical_memory_size()
+        == 0
+    )
+
     assert engine.get_memory() == []
+
+    hierarchical = (
+        engine.get_hierarchical_memory()
+    )
+
+    assert hierarchical["working"] == []
+    assert hierarchical["episodic"] == []
+    assert hierarchical["semantic"] == []
+    assert hierarchical["procedural"] == []
+
+
+def test_configuration_includes_hierarchical_memory():
+    """
+    The configuration should expose the
+    hierarchical memory integration.
+    """
+
+    engine = ExperienceLearningEngine()
+
+    configuration = (
+        engine.get_configuration()
+    )
+
+    assert (
+        configuration[
+            "memory"
+        ]
+        == "MemoryEngine"
+    )
+
+    assert (
+        configuration[
+            "hierarchical_memory"
+        ]
+        == "HierarchicalMemory"
+    )
