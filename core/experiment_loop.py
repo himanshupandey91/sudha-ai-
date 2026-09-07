@@ -1,34 +1,38 @@
 """
 Sudha AI - Experiment Loop Integration
 
-Version 0.2
+Version 0.3
 
 Connects:
 
-Hypothesis / Prediction
-        ↓
+Hypothesis
+    ↓
+Hypothesis-Aware Prediction
+    ↓
 Experiment
-        ↓
+    ↓
 Observed Result
-        ↓
+    ↓
 Difference
-        ↓
+    ↓
 Learning
-        ↓
+    ↓
 Memory
-        ↓
+    ↓
 World Model
 
-Version 0.2:
-- Optional hypothesis propagation
-- Supports hypothesis-aware experiments
-- Preserves legacy run(observation) experiments
-- Controlled experiment execution
-- Explicit observed outcomes
-- Closed-loop learning
-- No uncontrolled infinite loops
-- No external side effects
-- Deterministic and testable
+Version 0.3:
+- Propagates hypothesis into prediction.
+- Supports hypothesis-aware prediction engines.
+- Preserves legacy predict(observation) predictors.
+- Supports hypothesis-aware experiments.
+- Preserves legacy run(observation) experiments.
+- Controlled experiment execution.
+- Explicit observed outcomes.
+- Closed-loop learning.
+- No uncontrolled infinite loops.
+- No external side effects.
+- Deterministic and testable.
 """
 
 from core.closed_loop import ClosedLoopLearningEngine
@@ -52,8 +56,30 @@ class ExperimentLoopEngine:
 
         self.experiment = experiment
 
-    def predict(self, observation):
-        return self.closed_loop.predict(observation)
+    def predict(
+        self,
+        observation,
+        hypothesis=None
+    ):
+        """
+        Generate a prediction while propagating
+        the selected hypothesis.
+
+        Backward compatibility:
+        - predict(observation)
+        - legacy closed-loop predictors
+        """
+
+        try:
+            return self.closed_loop.predict(
+                observation,
+                hypothesis=hypothesis
+            )
+
+        except TypeError:
+            return self.closed_loop.predict(
+                observation
+            )
 
     def run_experiment(
         self,
@@ -122,7 +148,8 @@ class ExperimentLoopEngine:
         hypothesis=None
     ):
         prediction_result = self.predict(
-            observation
+            observation,
+            hypothesis=hypothesis
         )
 
         if prediction_result["status"] != "predicted":
