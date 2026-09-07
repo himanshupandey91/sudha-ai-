@@ -1,7 +1,7 @@
 """
 Sudha AI - Experience Learning Engine
 
-Version 0.2
+Version 0.3
 
 Connects:
 
@@ -15,15 +15,19 @@ Learning Signal
     ↓
 Memory
     ↓
+Hierarchical Memory
+    ↓
 World Model
     ↓
 Adaptive Prediction
 
-Version 0.2:
-- Integrates WorldModel
-- Stores completed experiences
-- Updates world state after learning
-- Preserves previous API behavior
+Version 0.3:
+- Preserves the existing MemoryEngine API
+- Adds HierarchicalMemory integration
+- Stores completed experiences in episodic memory
+- Stores learned knowledge in semantic memory
+- Stores learning procedure information in procedural memory
+- Keeps AdaptivePredictionEngine compatible with MemoryEngine
 - Never invents actual outcomes
 - Deterministic behavior
 - No external side effects
@@ -33,6 +37,7 @@ from core.difference import DifferenceEngine
 from core.learning import LearningEngine
 from core.adaptive_prediction import AdaptivePredictionEngine
 from core.memory import MemoryEngine
+from core.hierarchical_memory import HierarchicalMemory
 from core.world_model import WorldModel
 
 
@@ -44,16 +49,29 @@ class ExperienceLearningEngine:
         difference=None,
         learning=None,
         memory=None,
+        hierarchical_memory=None,
         world_model=None
     ):
         """
         Initialize the experience-learning system.
+
+        MemoryEngine remains the compatibility memory used by
+        AdaptivePredictionEngine.
+
+        HierarchicalMemory stores the same learning experience
+        across specialized memory layers.
         """
 
         self.memory = (
             memory
             if memory is not None
             else MemoryEngine()
+        )
+
+        self.hierarchical_memory = (
+            hierarchical_memory
+            if hierarchical_memory is not None
+            else HierarchicalMemory()
         )
 
         self.adaptive_prediction = (
@@ -107,6 +125,14 @@ class ExperienceLearningEngine:
         Learn from an explicitly supplied actual outcome.
 
         The actual outcome is never generated internally.
+
+        The completed experience is stored in:
+
+        1. Compatibility MemoryEngine
+        2. Episodic hierarchical memory
+        3. Semantic hierarchical memory
+        4. Procedural hierarchical memory
+        5. World Model
         """
 
         difference = self.difference.calculate(
@@ -126,6 +152,51 @@ class ExperienceLearningEngine:
             learning=learning_result
         )
 
+        experience = {
+            "observation": observation,
+            "prediction": prediction,
+            "actual": actual,
+            "difference": difference,
+            "learning": learning_result
+        }
+
+        episodic_result = (
+            self.hierarchical_memory.store_episodic(
+                experience
+            )
+        )
+
+        semantic_memory = {
+            "observation": observation,
+            "prediction": prediction,
+            "actual": actual,
+            "difference": difference,
+            "learning_signal": learning_result.get(
+                "learning_signal"
+            )
+        }
+
+        semantic_result = (
+            self.hierarchical_memory.store_semantic(
+                semantic_memory
+            )
+        )
+
+        procedural_memory = {
+            "process": "prediction_difference_learning",
+            "observation": observation,
+            "prediction": prediction,
+            "actual": actual,
+            "difference": difference,
+            "learning": learning_result
+        }
+
+        procedural_result = (
+            self.hierarchical_memory.store_procedural(
+                procedural_memory
+            )
+        )
+
         world_model_result = (
             self.world_model.update(
                 observation=observation,
@@ -136,6 +207,13 @@ class ExperienceLearningEngine:
             )
         )
 
+        hierarchical_result = {
+            "status": "stored",
+            "episodic": episodic_result,
+            "semantic": semantic_result,
+            "procedural": procedural_result
+        }
+
         return {
             "status": "learned",
             "observation": observation,
@@ -144,6 +222,7 @@ class ExperienceLearningEngine:
             "difference": difference,
             "learning": learning_result,
             "memory": memory_result,
+            "hierarchical_memory": hierarchical_result,
             "world_model": world_model_result
         }
 
@@ -170,6 +249,8 @@ class ExperienceLearningEngine:
             learning
                 ↓
             memory
+                ↓
+            hierarchical memory
                 ↓
             world model
         """
@@ -212,6 +293,9 @@ class ExperienceLearningEngine:
             "memory": learning_result[
                 "memory"
             ],
+            "hierarchical_memory": learning_result[
+                "hierarchical_memory"
+            ],
             "world_model": learning_result[
                 "world_model"
             ]
@@ -219,17 +303,44 @@ class ExperienceLearningEngine:
 
     def get_memory(self):
         """
-        Return stored experiences.
+        Return the compatibility memory.
+
+        This preserves the previous API.
         """
 
         return self.memory.retrieve()
 
     def get_memory_size(self):
         """
-        Return the number of stored experiences.
+        Return the number of stored compatibility memories.
         """
 
         return self.memory.size()
+
+    def get_hierarchical_memory(self):
+        """
+        Return all hierarchical memory layers.
+        """
+
+        return self.hierarchical_memory.retrieve_all()
+
+    def get_hierarchical_memory_size(
+        self,
+        memory_type=None
+    ):
+        """
+        Return hierarchical memory size.
+
+        If memory_type is None:
+            return total size.
+
+        Otherwise return the size of the
+        requested memory layer.
+        """
+
+        return self.hierarchical_memory.size(
+            memory_type
+        )
 
     def get_world_state(self):
         """
@@ -255,15 +366,48 @@ class ExperienceLearningEngine:
 
     def clear_memory(self):
         """
-        Clear stored experiences and reset
-        the World Model.
+        Clear both compatibility memory and
+        hierarchical memory, then reset the
+        World Model.
         """
 
         memory_result = self.memory.clear()
+
+        hierarchical_result = (
+            self.hierarchical_memory.clear()
+        )
+
         world_result = self.world_model.clear()
 
         return {
             "status": "cleared",
             "memory": memory_result,
+            "hierarchical_memory": hierarchical_result,
             "world_model": world_result
+        }
+
+    def get_configuration(self):
+        """
+        Return the current engine configuration.
+        """
+
+        return {
+            "memory": type(
+                self.memory
+            ).__name__,
+            "hierarchical_memory": type(
+                self.hierarchical_memory
+            ).__name__,
+            "adaptive_prediction": type(
+                self.adaptive_prediction
+            ).__name__,
+            "difference": type(
+                self.difference
+            ).__name__,
+            "learning": type(
+                self.learning
+            ).__name__,
+            "world_model": type(
+                self.world_model
+            ).__name__
         }
