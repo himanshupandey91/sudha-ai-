@@ -1,24 +1,24 @@
 """
 Sudha AI - Adaptive Predictor
 
-Version 0.1
+Version 0.2
 
 Purpose:
     Learn future predictions from observed results.
 
-Flow:
+Learning flow:
 
-Prediction
+Initial Prediction
     ↓
 Actual Result
     ↓
 Prediction Error
     ↓
-Adaptive Update
+Learning Rate
     ↓
-Better Future Prediction
+Updated Prediction
 
-This is a controlled learning component.
+This is a controlled adaptive prediction component.
 It does not claim general intelligence.
 """
 
@@ -26,7 +26,10 @@ It does not claim general intelligence.
 class AdaptivePredictor:
 
     def __init__(self, learning_rate=0.5):
-        if not isinstance(learning_rate, (int, float)):
+        if not isinstance(
+            learning_rate,
+            (int, float)
+        ):
             raise TypeError(
                 "learning_rate must be numeric"
             )
@@ -48,11 +51,13 @@ class AdaptivePredictor:
         """
         Return the current prediction for a hypothesis.
 
-        Returns None when the hypothesis has not
-        been observed yet.
+        Returns None when no prediction exists.
         """
 
-        if not isinstance(hypothesis, str):
+        if not isinstance(
+            hypothesis,
+            str
+        ):
             raise ValueError(
                 "hypothesis must be a string"
             )
@@ -60,6 +65,50 @@ class AdaptivePredictor:
         return self.predictions.get(
             hypothesis
         )
+
+    def set_prediction(
+        self,
+        hypothesis,
+        prediction
+    ):
+        """
+        Seed an initial prediction.
+
+        This allows the adaptive predictor to start
+        from an existing prediction instead of treating
+        the first observed actual result as the prediction.
+        """
+
+        if not isinstance(
+            hypothesis,
+            str
+        ):
+            raise ValueError(
+                "hypothesis must be a string"
+            )
+
+        if not hypothesis:
+            raise ValueError(
+                "hypothesis must not be empty"
+            )
+
+        if not isinstance(
+            prediction,
+            (int, float)
+        ):
+            raise ValueError(
+                "prediction must be numeric"
+            )
+
+        self.predictions[
+            hypothesis
+        ] = float(prediction)
+
+        return {
+            "status": "seeded",
+            "hypothesis": hypothesis,
+            "prediction": float(prediction)
+        }
 
     def update(
         self,
@@ -71,16 +120,33 @@ class AdaptivePredictor:
 
         Formula:
 
+        error =
+            actual - old_prediction
+
         new_prediction =
             old_prediction
-            + learning_rate
-            * (actual - old_prediction)
+            + learning_rate * error
 
-        For a new hypothesis, the first prediction
-        becomes the observed actual value.
+        If no initial prediction exists, the first
+        actual result becomes the initial prediction.
+
+        Example:
+
+        old prediction = 10
+        actual = 20
+        learning rate = 0.5
+
+        error = 20 - 10 = 10
+
+        new prediction =
+            10 + (0.5 * 10)
+            = 15
         """
 
-        if not isinstance(hypothesis, str):
+        if not isinstance(
+            hypothesis,
+            str
+        ):
             raise ValueError(
                 "hypothesis must be a string"
             )
@@ -90,7 +156,10 @@ class AdaptivePredictor:
                 "hypothesis must not be empty"
             )
 
-        if not isinstance(actual, (int, float)):
+        if not isinstance(
+            actual,
+            (int, float)
+        ):
             raise ValueError(
                 "actual must be numeric"
             )
@@ -100,10 +169,19 @@ class AdaptivePredictor:
         )
 
         if old_prediction is None:
-            new_prediction = float(actual)
+
+            new_prediction = float(
+                actual
+            )
+
+            error = None
 
         else:
-            error = actual - old_prediction
+
+            error = (
+                actual
+                - old_prediction
+            )
 
             new_prediction = (
                 old_prediction
@@ -121,6 +199,7 @@ class AdaptivePredictor:
             {
                 "actual": actual,
                 "prediction": new_prediction,
+                "error": error
             }
         )
 
@@ -129,9 +208,13 @@ class AdaptivePredictor:
             "hypothesis": hypothesis,
             "prediction": new_prediction,
             "actual": actual,
+            "error": error
         }
 
-    def get_history(self, hypothesis=None):
+    def get_history(
+        self,
+        hypothesis=None
+    ):
         if hypothesis is None:
             return {
                 name: list(records)
