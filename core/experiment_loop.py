@@ -1,7 +1,7 @@
 """
 Sudha AI - Experiment Loop Integration
 
-Version 0.3
+Version 0.4
 
 Connects:
 
@@ -13,6 +13,8 @@ Experiment
     ↓
 Observed Result
     ↓
+Actual Value Extraction
+    ↓
 Difference
     ↓
 Learning
@@ -21,15 +23,16 @@ Memory
     ↓
 World Model
 
-Version 0.3:
+Version 0.4:
 - Propagates hypothesis into prediction.
 - Supports hypothesis-aware prediction engines.
-- Preserves legacy predict(observation) predictors.
+- Preserves legacy predictors.
 - Supports hypothesis-aware experiments.
-- Preserves legacy run(observation) experiments.
+- Preserves legacy experiments.
+- Normalizes structured experiment results.
+- Extracts the actual observed value explicitly.
+- Prevents experiment metadata from entering the learning calculation.
 - Controlled experiment execution.
-- Explicit observed outcomes.
-- Closed-loop learning.
 - No uncontrolled infinite loops.
 - No external side effects.
 - Deterministic and testable.
@@ -64,10 +67,6 @@ class ExperimentLoopEngine:
         """
         Generate a prediction while propagating
         the selected hypothesis.
-
-        Backward compatibility:
-        - predict(observation)
-        - legacy closed-loop predictors
         """
 
         try:
@@ -80,6 +79,51 @@ class ExperimentLoopEngine:
             return self.closed_loop.predict(
                 observation
             )
+
+    def _extract_actual(self, result):
+        """
+        Extract the actual observed value from an
+        experiment result.
+
+        Supported forms:
+
+        1. Direct numeric result:
+           20
+
+        2. Structured result:
+           {
+               "status": "experiment_completed",
+               "actual": 20
+           }
+
+        Legacy experiments returning numeric values
+        remain supported.
+        """
+
+        if isinstance(result, dict):
+
+            if "actual" not in result:
+                return {
+                    "status": "failed",
+                    "reason": "experiment_result_missing_actual"
+                }
+
+            return {
+                "status": "actual_extracted",
+                "actual": result["actual"]
+            }
+
+        if isinstance(result, (int, float)):
+
+            return {
+                "status": "actual_extracted",
+                "actual": result
+            }
+
+        return {
+            "status": "failed",
+            "reason": "invalid_actual_result"
+        }
 
     def run_experiment(
         self,
@@ -113,17 +157,21 @@ class ExperimentLoopEngine:
         try:
 
             if hypothesis is not None:
+
                 try:
-                    actual = execute(
+                    experiment_result = execute(
                         observation,
                         hypothesis=hypothesis
                     )
+
                 except TypeError:
-                    actual = execute(
+                    experiment_result = execute(
                         observation
                     )
+
             else:
-                actual = execute(
+
+                experiment_result = execute(
                     observation
                 )
 
@@ -135,11 +183,19 @@ class ExperimentLoopEngine:
                 "error": str(error)
             }
 
+        extraction = self._extract_actual(
+            experiment_result
+        )
+
+        if extraction["status"] != "actual_extracted":
+            return extraction
+
         return {
             "status": "experiment_completed",
             "observation": observation,
             "hypothesis": hypothesis,
-            "actual": actual
+            "actual": extraction["actual"],
+            "experiment_result": experiment_result
         }
 
     def run_cycle(
