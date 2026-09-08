@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.6
+Version 0.7
 
 Connects:
 
@@ -9,11 +9,11 @@ Goal
     ↓
 Hypothesis Generation
     ↓
-Hypothesis Selection
+Hypothesis Planning
     ↓
-Plan
+Executive Reasoning
     ↓
-Selected Hypothesis
+Selected Decision
     ↓
 Hypothesis-Specific Prediction
     ↓
@@ -33,13 +33,13 @@ World Model
     ↓
 Next Cycle
 
-Version 0.6:
-- Adds a real hypothesis-specific adaptive predictor.
-- Connects PredictionEngine to AdaptivePredictor.
+Version 0.7:
+- Integrates ExecutiveReasoningEngine.
+- Executive reasoning evaluates available hypothesis evidence.
+- The executive decision determines the hypothesis used downstream.
+- Preserves hypothesis-specific adaptive prediction.
+- Preserves hypothesis performance learning.
 - Preserves legacy observation-based prediction behavior.
-- Seeds the selected hypothesis with the prediction actually used.
-- Updates the same selected hypothesis from the observed actual result.
-- Keeps hypothesis attribution explicit.
 - Keeps experiment results external to the predictor.
 - Does not invent experiment results.
 - Does not fake adaptation.
@@ -54,6 +54,7 @@ from core.experiment_loop import ExperimentLoopEngine
 from core.closed_loop import ClosedLoopLearningEngine
 from core.prediction import PredictionEngine
 from core.adaptive_predictor import AdaptivePredictor
+from core.executive_reasoning import ExecutiveReasoningEngine
 
 
 class CognitiveExperimentEngine:
@@ -61,12 +62,19 @@ class CognitiveExperimentEngine:
     def __init__(
         self,
         hypothesis_planner=None,
-        experiment_loop=None
+        experiment_loop=None,
+        executive_reasoning=None
     ):
         self.hypothesis_planner = (
             hypothesis_planner
             if hypothesis_planner is not None
             else HypothesisPlanningEngine()
+        )
+
+        self.executive_reasoning = (
+            executive_reasoning
+            if executive_reasoning is not None
+            else ExecutiveReasoningEngine()
         )
 
         if experiment_loop is not None:
@@ -104,9 +112,230 @@ class CognitiveExperimentEngine:
             )
 
     def reason(self, goal_state):
-        return self.hypothesis_planner.create_reasoning_plan(
-            goal_state
+        """
+        Generate hypotheses and create a planning result.
+
+        Executive reasoning is applied after hypothesis planning
+        so that the final selected hypothesis is evidence-driven.
+
+        If executive reasoning cannot resolve a decision, the
+        hypothesis planner's selection is preserved as fallback.
+        """
+
+        planning = (
+            self.hypothesis_planner.create_reasoning_plan(
+                goal_state
+            )
         )
+
+        if planning.get("status") != "ready":
+            return planning
+
+        hypotheses = planning.get(
+            "hypotheses",
+            []
+        )
+
+        executive_candidates = (
+            self._build_executive_candidates(
+                hypotheses
+            )
+        )
+
+        if not executive_candidates:
+            return planning
+
+        executive_result = (
+            self.executive_reasoning.reason(
+                executive_candidates
+            )
+        )
+
+        if executive_result.get(
+            "status"
+        ) != "decision_selected":
+
+            return {
+                **planning,
+                "executive_reasoning": (
+                    executive_result
+                )
+            }
+
+        selected_name = (
+            executive_result[
+                "decision"
+            ].get(
+                "selected"
+            )
+        )
+
+        selected_hypothesis = (
+            self._find_hypothesis(
+                hypotheses,
+                selected_name
+            )
+        )
+
+        if selected_hypothesis is None:
+            return {
+                **planning,
+                "executive_reasoning": (
+                    executive_result
+                )
+            }
+
+        selected_hypothesis = dict(
+            selected_hypothesis
+        )
+
+        selected_hypothesis[
+            "executive_selected"
+        ] = True
+
+        return {
+            **planning,
+            "selected_hypothesis": (
+                selected_hypothesis
+            ),
+            "executive_reasoning": (
+                executive_result
+            )
+        }
+
+    def _build_executive_candidates(
+        self,
+        hypotheses
+    ):
+        """
+        Convert planner hypotheses into the evidence format
+        required by ExecutiveReasoningEngine.
+
+        Learned hypothesis performance is used when available.
+
+        No evidence is invented:
+        - known average_error is passed through
+        - known score is passed through
+        - otherwise the candidate remains unresolved
+        """
+
+        if not isinstance(
+            hypotheses,
+            (list, tuple)
+        ):
+            return []
+
+        candidates = []
+
+        for hypothesis in hypotheses:
+
+            if not isinstance(
+                hypothesis,
+                dict
+            ):
+                continue
+
+            hypothesis_name = (
+                hypothesis.get(
+                    "hypothesis"
+                )
+            )
+
+            if not isinstance(
+                hypothesis_name,
+                str
+            ):
+                continue
+
+            candidate = {
+                "name": hypothesis_name
+            }
+
+            learned = (
+                self.hypothesis_planner
+                .hypothesis_learning
+                .evaluate(
+                    hypothesis_name
+                )
+            )
+
+            if learned.get(
+                "status"
+            ) != "unseen":
+
+                average_error = (
+                    learned.get(
+                        "average_error"
+                    )
+                )
+
+                score = learned.get(
+                    "score"
+                )
+
+                if isinstance(
+                    average_error,
+                    (int, float)
+                ) and not isinstance(
+                    average_error,
+                    bool
+                ):
+                    candidate[
+                        "average_error"
+                    ] = float(
+                        average_error
+                    )
+
+                if isinstance(
+                    score,
+                    (int, float)
+                ) and not isinstance(
+                    score,
+                    bool
+                ):
+                    candidate[
+                        "score"
+                    ] = float(
+                        score
+                    )
+
+            candidates.append(
+                candidate
+            )
+
+        return candidates
+
+    def _find_hypothesis(
+        self,
+        hypotheses,
+        hypothesis_name
+    ):
+        """
+        Find the actual planner hypothesis selected by
+        ExecutiveReasoningEngine.
+        """
+
+        if not isinstance(
+            hypothesis_name,
+            str
+        ):
+            return None
+
+        for hypothesis in hypotheses:
+
+            if not isinstance(
+                hypothesis,
+                dict
+            ):
+                continue
+
+            if hypothesis.get(
+                "hypothesis"
+            ) == hypothesis_name:
+
+                return hypothesis
+
+        return None
 
     def predict(
         self,
@@ -406,6 +635,9 @@ class CognitiveExperimentEngine:
             "goal": goal_state.get("goal"),
             "hypotheses": reasoning["hypotheses"],
             "selected_hypothesis": selected_hypothesis,
+            "executive_reasoning": reasoning.get(
+                "executive_reasoning"
+            ),
             "plan": reasoning["plan"],
             "observation": observation,
             "prediction": used_prediction,
@@ -456,6 +688,9 @@ class CognitiveExperimentEngine:
         configuration = {
             "hypothesis_planner": type(
                 self.hypothesis_planner
+            ).__name__,
+            "executive_reasoning": type(
+                self.executive_reasoning
             ).__name__,
             "experiment_loop": type(
                 self.experiment_loop
