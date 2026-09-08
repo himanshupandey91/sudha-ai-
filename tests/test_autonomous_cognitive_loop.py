@@ -1,226 +1,345 @@
 """
-Autonomous cognitive execution loop.
+Regression tests for Sudha AI Autonomous Cognitive Loop.
 
-The loop repeatedly gives observations to a cognitive engine, records each
-completed cognitive cycle, and stops when either the configured cycle limit,
-the observation sequence, or the cognitive engine stops execution.
-
-This module does not invent observations or actual outcomes.
+These tests preserve coverage for the original autonomous-loop behaviors
+while matching the current observation/provider API.
 """
 
-from __future__ import annotations
+import pytest
 
-from typing import Any, Dict, List, Optional, Sequence
+from core.autonomous_cognitive_loop import AutonomousCognitiveLoop
+from core.cognitive_experiment import CognitiveExperimentEngine
+from core.observation_provider import SequenceObservationProvider
 
 
-class AutonomousCognitiveLoop:
-    """
-    Execute a CognitiveExperimentEngine across a bounded observation sequence.
+class DeterministicSequenceExperiment:
+    """Controlled experiment used to verify deterministic data flow."""
 
-    The cognitive engine must provide:
-        - run_cycle(goal_state, observation)
-        - is_stopped()
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
 
-    Optional lifecycle methods:
-        - stop()
-        - reset()
-    """
-
-    def __init__(self, cognitive_engine: Any) -> None:
-        if cognitive_engine is None:
-            raise ValueError("cognitive_engine is required")
-
-        run_cycle = getattr(cognitive_engine, "run_cycle", None)
-        if not callable(run_cycle):
-            raise TypeError(
-                "cognitive_engine must provide a callable run_cycle"
-            )
-
-        self.cognitive_engine = cognitive_engine
-        self._history: List[Dict[str, Any]] = []
-        self._cycle_count = 0
-
-    def _validate_goal(self, goal_state: Dict[str, Any]) -> None:
-        """Validate the goal-state structure."""
-        if not isinstance(goal_state, dict):
-            raise TypeError("goal_state must be a dictionary")
-
-        if "goal" not in goal_state:
-            raise ValueError("goal_state must contain a goal")
-
-        goal = goal_state["goal"]
-
-        if not isinstance(goal, str) or not goal.strip():
-            raise ValueError("goal_state must contain a goal")
-
-    def _validate_observations(
-        self,
-        observations: Sequence[Any],
-    ) -> None:
-        """Validate the legacy finite observation sequence."""
-        if not isinstance(observations, (list, tuple)):
-            raise TypeError("observations must be a list or tuple")
-
-    def _validate_max_cycles(self, max_cycles: int) -> None:
-        """Validate the maximum number of cycles."""
-        if isinstance(max_cycles, bool) or not isinstance(max_cycles, int):
-            raise TypeError("max_cycles must be an integer")
-
-        if max_cycles <= 0:
-            raise ValueError("max_cycles must be greater than zero")
-
-    def run(
-        self,
-        goal_state: Dict[str, Any],
-        observations: Optional[Sequence[Any]] = None,
-        max_cycles: int = 1,
-    ) -> Dict[str, Any]:
-        """
-        Run the autonomous cognitive loop.
-
-        Parameters
-        ----------
-        goal_state:
-            Dictionary containing a non-empty ``goal`` value.
-
-        observations:
-            Finite list or tuple of observations. The loop never creates
-            observations itself.
-
-        max_cycles:
-            Maximum number of cognitive cycles to execute.
-
-        Returns
-        -------
-        dict
-            Structured execution result containing every completed cycle.
-
-        Notes
-        -----
-        This method intentionally keeps the original finite-sequence API.
-        Observation-provider support can be added separately without
-        changing this baseline contract.
-        """
-        self._validate_goal(goal_state)
-
-        if observations is None:
-            raise TypeError("observations must be a list or tuple")
-
-        self._validate_observations(observations)
-        self._validate_max_cycles(max_cycles)
-
-        self._history = []
-        self._cycle_count = 0
-
-        if len(observations) == 0:
-            return {
-                "status": "unavailable",
-                "goal": goal_state,
-                "cycles": [],
-                "cycle_count": 0,
-                "max_cycles": max_cycles,
-                "reason": "no_observations",
-                "stopped": False,
+    def run(self, observation, hypothesis=None):
+        self.calls.append(
+            {
+                "observation": observation,
+                "hypothesis": hypothesis,
             }
-
-        cycle_limit = min(max_cycles, len(observations))
-
-        for index in range(cycle_limit):
-            is_stopped = getattr(
-                self.cognitive_engine,
-                "is_stopped",
-                None,
-            )
-
-            if callable(is_stopped) and is_stopped():
-                return {
-                    "status": "stopped",
-                    "goal": goal_state,
-                    "cycles": list(self._history),
-                    "cycle_count": self._cycle_count,
-                    "max_cycles": max_cycles,
-                    "reason": "cognitive_engine_stopped",
-                    "stopped": True,
-                }
-
-            observation = observations[index]
-
-            cycle_result = self.cognitive_engine.run_cycle(
-                goal_state,
-                observation,
-            )
-
-            if not isinstance(cycle_result, dict):
-                raise TypeError(
-                    "cognitive_engine.run_cycle must return a dictionary"
-                )
-
-            if cycle_result.get("status") != "completed":
-                raise RuntimeError(
-                    "cognitive_engine.run_cycle must return "
-                    "status='completed'"
-                )
-
-            self._history.append(cycle_result)
-            self._cycle_count += 1
-
-        if self._cycle_count >= max_cycles:
-            reason = "max_cycles_reached"
-        else:
-            reason = "observations_exhausted"
-
-        return {
-            "status": "completed",
-            "goal": goal_state,
-            "cycles": list(self._history),
-            "cycle_count": self._cycle_count,
-            "max_cycles": max_cycles,
-            "reason": reason,
-            "stopped": False,
-        }
-
-    def stop(self) -> None:
-        """Request the underlying cognitive engine to stop."""
-        stop_method = getattr(self.cognitive_engine, "stop", None)
-
-        if not callable(stop_method):
-            raise AttributeError(
-                "cognitive_engine must provide a callable stop method"
-            )
-
-        stop_method()
-
-    def reset(self) -> None:
-        """Reset the autonomous loop and the underlying cognitive engine."""
-        reset_method = getattr(self.cognitive_engine, "reset", None)
-
-        if not callable(reset_method):
-            raise AttributeError(
-                "cognitive_engine must provide a callable reset method"
-            )
-
-        reset_method()
-
-        self._history = []
-        self._cycle_count = 0
-
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Return a copy of completed cognitive cycles."""
-        return list(self._history)
-
-    def get_cycle_count(self) -> int:
-        """Return the number of completed cycles."""
-        return self._cycle_count
-
-    def is_stopped(self) -> bool:
-        """Return whether the underlying cognitive engine is stopped."""
-        is_stopped = getattr(
-            self.cognitive_engine,
-            "is_stopped",
-            None,
         )
 
-        if not callable(is_stopped):
-            return False
+        if not self.results:
+            raise RuntimeError("no_more_results")
 
-        return bool(is_stopped())
+        return self.results.pop(0)
+
+
+def create_loop(results):
+    """Create a cognitive engine with a deterministic experiment."""
+    engine = CognitiveExperimentEngine()
+    experiment = DeterministicSequenceExperiment(results)
+
+    engine.experiment_loop.experiment = experiment
+
+    loop = AutonomousCognitiveLoop(engine)
+
+    return loop, engine, experiment
+
+
+def test_autonomous_loop_runs_multiple_cycles():
+    loop, engine, experiment = create_loop(
+        [20, 10, 20]
+    )
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+            10,
+            10,
+        ],
+        max_cycles=3,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycle_count"] == 3
+    assert result["cycles"] == 3
+    assert result["reason"] == "max_cycles_reached"
+
+    history = loop.get_history()
+
+    assert len(history) == 3
+
+    assert history[0]["prediction"] == 10
+    assert history[0]["actual"] == 20
+    assert history[0]["difference"] == 10
+
+    assert history[1]["prediction"] == 15
+    assert history[1]["actual"] == 10
+    assert history[1]["difference"] == 5
+
+    assert history[2]["prediction"] == 12.5
+    assert history[2]["actual"] == 20
+    assert history[2]["difference"] == 7.5
+
+    assert engine.get_cycle_count() == 3
+    assert len(experiment.calls) == 3
+
+
+def test_autonomous_loop_respects_hard_cycle_limit():
+    loop, engine, experiment = create_loop(
+        [20, 10, 20, 10, 20]
+    )
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+            10,
+            10,
+            10,
+            10,
+        ],
+        max_cycles=2,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycle_count"] == 2
+    assert result["cycles"] == 2
+    assert result["reason"] == "max_cycles_reached"
+
+    assert len(loop.get_history()) == 2
+    assert len(experiment.calls) == 2
+    assert engine.get_cycle_count() == 2
+
+
+def test_autonomous_loop_stops_when_observations_end():
+    loop, engine, experiment = create_loop(
+        [20, 10]
+    )
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+            10,
+        ],
+        max_cycles=5,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycle_count"] == 2
+    assert result["cycles"] == 2
+    assert result["reason"] == "observations_exhausted"
+
+    assert len(loop.get_history()) == 2
+    assert len(experiment.calls) == 2
+    assert engine.get_cycle_count() == 2
+
+
+def test_autonomous_loop_does_not_invent_actual_results():
+    loop, _, _ = create_loop(
+        [20]
+    )
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+        ],
+        max_cycles=1,
+    )
+
+    assert result["status"] == "completed"
+
+    cycle = loop.get_history()[0]
+
+    assert cycle["actual"] == 20
+    assert cycle["actual"] != cycle["observation"]
+
+
+def test_autonomous_loop_uses_real_learning_between_cycles():
+    loop, engine, _ = create_loop(
+        [20, 10, 20]
+    )
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+            10,
+            10,
+        ],
+        max_cycles=3,
+    )
+
+    assert result["status"] == "completed"
+
+    predictions = [
+        cycle["prediction"]
+        for cycle in loop.get_history()
+    ]
+
+    assert predictions == [
+        10,
+        15,
+        12.5,
+    ]
+
+    learned = engine.get_learned_hypotheses()
+
+    assert len(learned) >= 1
+
+    selected = None
+
+    for record in learned:
+        if record["hypothesis"] == "use_recent_experience":
+            selected = record
+            break
+
+    assert selected is not None
+    assert selected["attempts"] == 3
+    assert selected["average_error"] == (
+        (10 + 5 + 7.5) / 3
+    )
+
+
+def test_autonomous_loop_can_be_stopped():
+    loop, engine, experiment = create_loop(
+        [20, 10, 20]
+    )
+
+    engine.stop()
+
+    result = loop.run(
+        {
+            "goal": "reduce_prediction_error",
+        },
+        observations=[
+            10,
+            10,
+            10,
+        ],
+        max_cycles=3,
+    )
+
+    assert result["status"] == "stopped"
+    assert result["reason"] == "stopped"
+    assert result["cycle_count"] == 0
+    assert result["cycles"] == 0
+    assert result["stopped"] is True
+    assert len(experiment.calls) == 0
+
+
+def test_autonomous_loop_requires_goal():
+    loop, _, _ = create_loop(
+        [20]
+    )
+
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="goal_state",
+    ):
+        loop.run(
+            {},
+            observations=[10],
+            max_cycles=1,
+        )
+
+
+def test_autonomous_loop_requires_observation_sequence():
+    loop, _, _ = create_loop(
+        [20]
+    )
+
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="observations|observation source",
+    ):
+        loop.run(
+            {
+                "goal": "reduce_prediction_error",
+            },
+            observations=10,
+            max_cycles=1,
+        )
+
+
+def test_autonomous_loop_requires_positive_max_cycles():
+    loop, _, _ = create_loop(
+        [20]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="max_cycles",
+    ):
+        loop.run(
+            {
+                "goal": "reduce_prediction_error",
+            },
+            observations=[10],
+            max_cycles=0,
+        )
+
+
+def test_autonomous_loop_rejects_boolean_max_cycles():
+    loop, _, _ = create_loop(
+        [20]
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="max_cycles must be an integer",
+    ):
+        loop.run(
+            {
+                "goal": "reduce_prediction_error",
+            },
+            observations=[10],
+            max_cycles=True,
+        )
+
+
+def test_autonomous_loop_preserves_observation_provider_compatibility():
+    provider = SequenceObservationProvider(
+        [10, 20, 30]
+    )
+
+    loop, _, _ = create_loop(
+        [10, 20, 30]
+    )
+
+    result = loop.run(
+        {
+            "goal": "observe",
+        },
+        observation_provider=provider,
+        max_cycles=3,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycle_count"] == 3
+    assert result["cycles"] == 3
+    assert result["reason"] == "max_cycles_reached"
+
+    history = loop.get_history()
+
+    assert len(history) == 3
+    assert [
+        item["observation"]
+        for item in history
+    ] == [
+        10,
+        20,
+        30,
+    ]
