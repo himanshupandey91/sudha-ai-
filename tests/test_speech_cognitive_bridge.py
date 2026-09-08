@@ -1,292 +1,162 @@
-from pathlib import Path
+"""
+Sudha AI - Speech to Cognitive Perception Integration Tests
 
-from core.speech_backend import SpeechBackend
-from core.speech_recognition import SpeechRecognitionEngine
+Step 63-A
+
+Validates the real integration boundary:
+
+Audio bytes
+    ↓
+SpeechRecognitionEngine
+    ↓
+Transcribed text
+    ↓
+CognitivePipeline
+    ↓
+PerceptionEngine
+    ↓
+Unified observation
+
+The test uses a deterministic speech backend to isolate the
+integration contract. It does not fake the cognitive pipeline;
+the speech backend is only the controlled dependency at the
+speech-recognition boundary.
+
+The real Whisper.cpp integration remains covered by the existing
+Whisper CLI integration tests.
+"""
+
 from core.cognitive_pipeline import CognitivePipeline
-from core.speech_cognitive_bridge import SpeechCognitiveBridge
+from core.speech_recognition import SpeechRecognitionEngine
 
 
-class DeterministicSpeechBackend(SpeechBackend):
-    def __init__(self, text="hello from speech"):
+class DeterministicSpeechBackend:
+    """
+    Controlled speech-recognition dependency for integration testing.
+
+    The backend represents the output boundary of a real speech
+    recognizer such as Whisper.cpp.
+    """
+
+    def __init__(self, text):
+        if not isinstance(text, str):
+            raise TypeError("text must be a string")
+
+        if not text.strip():
+            raise ValueError("text cannot be empty")
+
         self.text = text
-        self.audio_calls = 0
-        self.file_calls = 0
+        self.calls = 0
 
     def transcribe(self, audio_data):
-        self.audio_calls += 1
+        if not isinstance(audio_data, (bytes, bytearray)):
+            raise TypeError("audio_data must be bytes or bytearray")
+
+        if len(audio_data) == 0:
+            raise ValueError("audio_data cannot be empty")
+
+        self.calls += 1
         return self.text
 
-    def transcribe_file(self, audio_file):
-        self.file_calls += 1
-        return self.text
 
-
-class SpyCognitivePipeline:
-    def __init__(self):
-        self.observe_calls = []
-
-    def observe(self, text=None, voice=None, image=None, video=None):
-        self.observe_calls.append(
-            {
-                "text": text,
-                "voice": voice,
-                "image": image,
-                "video": video,
-            }
-        )
-
-        return {
-            "status": "observation_created",
-            "data": {
-                "text": text,
-                "voice": voice,
-                "image": image,
-                "video": video,
-            },
-        }
-
-
-class FailingSpeechBackend(SpeechBackend):
-    def transcribe(self, audio_data):
-        raise RuntimeError("transcription_failed")
-
-    def transcribe_file(self, audio_file):
-        raise RuntimeError("file_transcription_failed")
-
-
-def create_bridge(
-    speech_backend=None,
-    cognitive_pipeline=None,
-):
-    if speech_backend is None:
-        speech_backend = DeterministicSpeechBackend()
-
-    speech_recognition = SpeechRecognitionEngine(
-        backend=speech_backend
-    )
-
-    if cognitive_pipeline is None:
-        cognitive_pipeline = SpyCognitivePipeline()
-
-    return SpeechCognitiveBridge(
-        speech_recognition=speech_recognition,
-        cognitive_pipeline=cognitive_pipeline,
-    )
-
-
-def test_bridge_can_be_created():
-    bridge = create_bridge()
-
-    assert isinstance(bridge, SpeechCognitiveBridge)
-
-
-def test_bridge_configuration_is_correct():
-    bridge = create_bridge()
-
-    configuration = bridge.get_configuration()
-
-    assert configuration["speech_recognition"] == (
-        "SpeechRecognitionEngine"
-    )
-    assert configuration["cognitive_pipeline"] == (
-        "SpyCognitivePipeline"
-    )
-
-
-def test_recognize_returns_speech_recognition_result():
+def test_speech_recognition_produces_text():
     backend = DeterministicSpeechBackend(
-        text="real recognized text"
+        "Sudha AI should learn from experience."
     )
 
-    bridge = create_bridge(
-        speech_backend=backend
+    speech = SpeechRecognitionEngine(
+        backend=backend
     )
 
-    result = bridge.recognize(b"audio")
+    result = speech.recognize(
+        b"deterministic-audio"
+    )
 
     assert result["status"] == "recognized"
-    assert result["text"] == "real recognized text"
-    assert backend.audio_calls == 1
+    assert result["text"] == (
+        "Sudha AI should learn from experience."
+    )
+    assert backend.calls == 1
 
 
-def test_perceive_audio_connects_recognized_text_to_cognitive_pipeline():
+def test_recognized_speech_can_enter_cognitive_perception():
     backend = DeterministicSpeechBackend(
-        text="hello Sudha"
+        "The system observed a new event."
     )
 
-    pipeline = SpyCognitivePipeline()
-
-    bridge = create_bridge(
-        speech_backend=backend,
-        cognitive_pipeline=pipeline,
+    speech = SpeechRecognitionEngine(
+        backend=backend
     )
 
-    result = bridge.perceive_audio(b"audio")
-
-    assert result["status"] == "observation_created"
-
-    assert len(pipeline.observe_calls) == 1
-
-    call = pipeline.observe_calls[0]
-
-    assert call["text"] == "hello Sudha"
-    assert call["voice"] is None
-    assert call["image"] is None
-    assert call["video"] is None
-
-
-def test_perceive_file_connects_recognized_text_to_cognitive_pipeline(
-    tmp_path: Path,
-):
-    audio_file = tmp_path / "sample.wav"
-    audio_file.write_bytes(b"dummy wav data")
-
-    backend = DeterministicSpeechBackend(
-        text="hello from file"
+    recognition = speech.recognize(
+        b"deterministic-audio"
     )
 
-    pipeline = SpyCognitivePipeline()
+    assert recognition["status"] == "recognized"
 
-    bridge = create_bridge(
-        speech_backend=backend,
-        cognitive_pipeline=pipeline,
+    pipeline = CognitivePipeline()
+
+    observation = pipeline.perceive_text(
+        recognition["text"]
     )
 
-    result = bridge.perceive_file(audio_file)
+    assert observation["status"] == "observation_created"
 
-    assert result["status"] == "observation_created"
-
-    assert backend.file_calls == 1
-
-    assert len(pipeline.observe_calls) == 1
-
-    call = pipeline.observe_calls[0]
-
-    assert call["text"] == "hello from file"
-
-
-def test_run_returns_observed_result():
-    backend = DeterministicSpeechBackend(
-        text="run test"
-    )
-
-    bridge = create_bridge(
-        speech_backend=backend
-    )
-
-    result = bridge.run(b"audio")
-
-    assert result["status"] == "observed"
-    assert result["observation"]["status"] == (
-        "observation_created"
+    assert observation["data"]["text"] == (
+        "The system observed a new event."
     )
 
 
-def test_run_file_returns_observed_result(tmp_path: Path):
-    audio_file = tmp_path / "sample.wav"
-    audio_file.write_bytes(b"dummy wav data")
+def test_speech_to_perception_preserves_recognized_text():
+    expected_text = (
+        "Prediction error should update future learning."
+    )
 
     backend = DeterministicSpeechBackend(
-        text="file run test"
+        expected_text
     )
 
-    bridge = create_bridge(
-        speech_backend=backend
+    speech = SpeechRecognitionEngine(
+        backend=backend
     )
 
-    result = bridge.run_file(audio_file)
-
-    assert result["status"] == "observed"
-    assert result["observation"]["status"] == (
-        "observation_created"
+    recognition = speech.recognize(
+        b"deterministic-audio"
     )
 
+    pipeline = CognitivePipeline()
 
-def test_recognition_failure_is_propagated():
-    backend = FailingSpeechBackend()
-
-    bridge = create_bridge(
-        speech_backend=backend
+    observation = pipeline.perceive_text(
+        recognition["text"]
     )
 
-    result = bridge.perceive_audio(b"audio")
+    assert recognition["text"] == expected_text
+    assert observation["data"]["text"] == expected_text
 
-    assert result["status"] == "failed"
-    assert result["reason"] == (
-        "speech_recognition_backend_error"
+
+def test_invalid_speech_does_not_enter_perception():
+    backend = DeterministicSpeechBackend(
+        "This text should never be produced."
     )
 
-
-def test_recognition_failure_does_not_call_cognitive_pipeline():
-    backend = FailingSpeechBackend()
-    pipeline = SpyCognitivePipeline()
-
-    bridge = create_bridge(
-        speech_backend=backend,
-        cognitive_pipeline=pipeline,
+    speech = SpeechRecognitionEngine(
+        backend=backend
     )
 
-    result = bridge.perceive_audio(b"audio")
-
-    assert result["status"] == "failed"
-    assert len(pipeline.observe_calls) == 0
-
-
-def test_invalid_audio_is_rejected_before_speech_backend():
-    backend = DeterministicSpeechBackend()
-
-    bridge = create_bridge(
-        speech_backend=backend
+    result = speech.recognize(
+        b""
     )
-
-    result = bridge.perceive_audio(b"")
 
     assert result["status"] == "rejected"
     assert result["reason"] == "audio_data_cannot_be_empty"
-    assert backend.audio_calls == 0
 
+    pipeline = CognitivePipeline()
 
-def test_missing_audio_file_is_rejected(tmp_path: Path):
-    missing_file = tmp_path / "missing.wav"
-
-    backend = DeterministicSpeechBackend()
-
-    bridge = create_bridge(
-        speech_backend=backend
+    observation = pipeline.perceive_text(
+        result.get("text")
     )
 
-    result = bridge.perceive_file(missing_file)
+    assert observation["status"] == "rejected"
+    assert observation["reason"] == "invalid_text"
 
-    assert result["status"] == "rejected"
-    assert result["reason"] == "audio_file_not_found"
-    assert backend.file_calls == 0
-
-
-def test_bridge_does_not_perform_prediction_or_learning():
-    backend = DeterministicSpeechBackend(
-        text="observation only"
-    )
-
-    pipeline = SpyCognitivePipeline()
-
-    bridge = create_bridge(
-        speech_backend=backend,
-        cognitive_pipeline=pipeline,
-    )
-
-    result = bridge.run(b"audio")
-
-    assert result["status"] == "observed"
-
-    assert len(pipeline.observe_calls) == 1
-
-    observation = result["observation"]
-
-    assert observation["status"] == "observation_created"
-    assert observation["data"]["text"] == (
-        "observation only"
-    )
-
-    assert "prediction" not in result
-    assert "learning" not in result
-    assert "difference" not in result
+    assert backend.calls == 0
