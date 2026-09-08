@@ -28,6 +28,24 @@ from core.hierarchical_memory import HierarchicalMemory
 from core.memory import MemoryEngine
 
 
+class DeterministicNumericPredictionEngine:
+    """
+    Deterministic prediction dependency used to isolate the
+    AdaptivePredictionEngine integration contract.
+
+    The observation itself is structured, but this prediction
+    engine deliberately defines its base numeric prediction
+    as 10.
+
+    This is not a fake learning implementation. It is a
+    deterministic test dependency that gives the adaptive
+    prediction layer a known numeric baseline.
+    """
+
+    def predict(self, observation):
+        return 10
+
+
 class TestHierarchicalMemoryPredictionIntegration:
 
     def test_hierarchical_memory_is_connected_to_prediction(self):
@@ -70,8 +88,13 @@ class TestHierarchicalMemoryPredictionIntegration:
             "difference": 10,
         })
 
+        prediction_engine = (
+            DeterministicNumericPredictionEngine()
+        )
+
         engine = AdaptivePredictionEngine(
-            hierarchical_memory=hierarchical_memory
+            prediction_engine=prediction_engine,
+            hierarchical_memory=hierarchical_memory,
         )
 
         details = engine.predict_with_details(
@@ -98,6 +121,7 @@ class TestHierarchicalMemoryPredictionIntegration:
 
         Previous experience:
             prediction = 10
+            actual = 20
             difference = 10
 
         Expected adaptive prediction:
@@ -118,8 +142,13 @@ class TestHierarchicalMemoryPredictionIntegration:
             "difference": 10,
         })
 
+        prediction_engine = (
+            DeterministicNumericPredictionEngine()
+        )
+
         engine = AdaptivePredictionEngine(
-            hierarchical_memory=hierarchical_memory
+            prediction_engine=prediction_engine,
+            hierarchical_memory=hierarchical_memory,
         )
 
         prediction = engine.predict(
@@ -166,9 +195,13 @@ class TestHierarchicalMemoryPredictionIntegration:
         experience = memories[0]
 
         assert experience["observation"] == observation
+
         assert "prediction" in experience
+
         assert experience["actual"] == 20
+
         assert "difference" in experience
+
         assert "learning" in experience
 
     def test_hierarchical_memory_is_used_before_legacy_memory(self):
@@ -194,6 +227,7 @@ class TestHierarchicalMemoryPredictionIntegration:
         """
 
         hierarchical_memory = HierarchicalMemory()
+
         legacy_memory = MemoryEngine()
 
         observation = {
@@ -215,7 +249,12 @@ class TestHierarchicalMemoryPredictionIntegration:
             "difference": 5,
         })
 
+        prediction_engine = (
+            DeterministicNumericPredictionEngine()
+        )
+
         engine = AdaptivePredictionEngine(
+            prediction_engine=prediction_engine,
             memory_engine=legacy_memory,
             hierarchical_memory=hierarchical_memory,
         )
