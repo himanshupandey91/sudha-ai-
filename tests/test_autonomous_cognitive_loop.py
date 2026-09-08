@@ -343,3 +343,25 @@ def test_autonomous_loop_preserves_observation_provider_compatibility():
         20,
         30,
     ]
+def test_provider_learning_changes_prediction():
+    provider = SequenceObservationProvider([10, 10])
+    loop, engine, experiment = create_loop([20, 10])
+
+    result = loop.run(
+        {"goal": "reduce_prediction_error"},
+        observation_provider=provider,
+        max_cycles=2,
+    )
+
+    assert result["status"] == "completed"
+
+    history = loop.get_history()
+
+    assert len(history) == 2
+    assert history[0]["prediction"] == 10
+    assert history[0]["actual"] == 20
+
+    assert history[1]["prediction"] == 15
+    assert history[1]["actual"] == 10
+
+    assert history[1]["prediction"] != history[0]["prediction"]
