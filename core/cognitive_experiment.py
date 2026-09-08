@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.7
+Version 0.8
 
 Connects:
 
@@ -33,9 +33,17 @@ World Model
     ↓
 Next Cycle
 
-Version 0.7:
+Version 0.8:
 - Integrates ExecutiveReasoningEngine.
-- Executive reasoning evaluates available hypothesis evidence.
+- Includes learned hypotheses that are not present in the
+  current static hypothesis list.
+- Preserves learned hypothesis metadata such as:
+    - learned
+    - score
+    - average_error
+    - attempts
+    - exploration
+- Executive reasoning evaluates real available evidence.
 - The executive decision determines the hypothesis used downstream.
 - Preserves hypothesis-specific adaptive prediction.
 - Preserves hypothesis performance learning.
@@ -79,9 +87,7 @@ class CognitiveExperimentEngine:
 
         if experiment_loop is not None:
 
-            self.experiment_loop = (
-                experiment_loop
-            )
+            self.experiment_loop = experiment_loop
 
         else:
 
@@ -113,13 +119,14 @@ class CognitiveExperimentEngine:
 
     def reason(self, goal_state):
         """
-        Generate hypotheses and create a planning result.
+        Generate hypotheses, create a planning result, and then
+        apply executive reasoning using all available evidence.
 
-        Executive reasoning is applied after hypothesis planning
-        so that the final selected hypothesis is evidence-driven.
+        If executive reasoning cannot resolve a decision,
+        the hypothesis planner's own selection is preserved.
 
-        If executive reasoning cannot resolve a decision, the
-        hypothesis planner's selection is preserved as fallback.
+        Learned hypotheses that are not part of the current static
+        candidate list are also exposed to executive reasoning.
         """
 
         planning = (
@@ -178,6 +185,14 @@ class CognitiveExperimentEngine:
         )
 
         if selected_hypothesis is None:
+
+            selected_hypothesis = (
+                self._find_learned_hypothesis(
+                    selected_name
+                )
+            )
+
+        if selected_hypothesis is None:
             return {
                 **planning,
                 "executive_reasoning": (
@@ -208,15 +223,19 @@ class CognitiveExperimentEngine:
         hypotheses
     ):
         """
-        Convert planner hypotheses into the evidence format
-        required by ExecutiveReasoningEngine.
+        Convert planner hypotheses and learned hypotheses
+        into the evidence format required by
+        ExecutiveReasoningEngine.
 
-        Learned hypothesis performance is used when available.
+        Two sources are considered:
 
-        No evidence is invented:
-        - known average_error is passed through
-        - known score is passed through
-        - otherwise the candidate remains unresolved
+        1. Current static hypotheses.
+        2. Previously learned hypotheses.
+
+        A learned hypothesis is included even when it is not
+        present in the current static candidate list.
+
+        No evidence is invented.
         """
 
         if not isinstance(
@@ -225,7 +244,7 @@ class CognitiveExperimentEngine:
         ):
             return []
 
-        candidates = []
+        candidates_by_name = {}
 
         for hypothesis in hypotheses:
 
@@ -251,59 +270,147 @@ class CognitiveExperimentEngine:
                 "name": hypothesis_name
             }
 
-            learned = (
-                self.hypothesis_planner
-                .hypothesis_learning
-                .evaluate(
-                    hypothesis_name
+            priority = hypothesis.get(
+                "priority"
+            )
+
+            if isinstance(
+                priority,
+                (int, float)
+            ) and not isinstance(
+                priority,
+                bool
+            ):
+                candidate[
+                    "priority"
+                ] = float(priority)
+
+            candidates_by_name[
+                hypothesis_name
+            ] = candidate
+
+        hypothesis_learning = getattr(
+            self.hypothesis_planner,
+            "hypothesis_learning",
+            None
+        )
+
+        if hypothesis_learning is None:
+            return list(
+                candidates_by_name.values()
+            )
+
+        rank = getattr(
+            hypothesis_learning,
+            "rank",
+            None
+        )
+
+        if not callable(rank):
+            return list(
+                candidates_by_name.values()
+            )
+
+        learned_records = rank()
+
+        if not isinstance(
+            learned_records,
+            (list, tuple)
+        ):
+            learned_records = []
+
+        for learned in learned_records:
+
+            if not isinstance(
+                learned,
+                dict
+            ):
+                continue
+
+            hypothesis_name = (
+                learned.get(
+                    "hypothesis"
                 )
             )
 
-            if learned.get(
-                "status"
-            ) != "unseen":
+            if not isinstance(
+                hypothesis_name,
+                str
+            ):
+                continue
 
-                average_error = (
-                    learned.get(
-                        "average_error"
-                    )
+            candidate = candidates_by_name.get(
+                hypothesis_name,
+                {
+                    "name": hypothesis_name,
+                    "priority": 0
+                }
+            )
+
+            average_error = (
+                learned.get(
+                    "average_error"
+                )
+            )
+
+            score = learned.get(
+                "score"
+            )
+
+            attempts = learned.get(
+                "attempts"
+            )
+
+            if isinstance(
+                average_error,
+                (int, float)
+            ) and not isinstance(
+                average_error,
+                bool
+            ):
+                candidate[
+                    "average_error"
+                ] = float(
+                    average_error
                 )
 
-                score = learned.get(
+            if isinstance(
+                score,
+                (int, float)
+            ) and not isinstance(
+                score,
+                bool
+            ):
+                candidate[
                     "score"
-                )
+                ] = float(score)
 
-                if isinstance(
-                    average_error,
-                    (int, float)
-                ) and not isinstance(
-                    average_error,
-                    bool
-                ):
-                    candidate[
-                        "average_error"
-                    ] = float(
-                        average_error
-                    )
+            if isinstance(
+                attempts,
+                int
+            ) and not isinstance(
+                attempts,
+                bool
+            ):
+                candidate[
+                    "attempts"
+                ] = attempts
 
-                if isinstance(
-                    score,
-                    (int, float)
-                ) and not isinstance(
-                    score,
-                    bool
-                ):
-                    candidate[
-                        "score"
-                    ] = float(
-                        score
-                    )
+            candidate[
+                "learned"
+            ] = True
 
-            candidates.append(
-                candidate
-            )
+            candidate[
+                "exploration"
+            ] = False
 
-        return candidates
+            candidates_by_name[
+                hypothesis_name
+            ] = candidate
+
+        return list(
+            candidates_by_name.values()
+        )
 
     def _find_hypothesis(
         self,
@@ -311,8 +418,12 @@ class CognitiveExperimentEngine:
         hypothesis_name
     ):
         """
-        Find the actual planner hypothesis selected by
-        ExecutiveReasoningEngine.
+        Find the actual planner hypothesis.
+
+        If the hypothesis has learned performance data,
+        merge that data into the returned hypothesis so
+        downstream components receive the complete learned
+        state.
         """
 
         if not isinstance(
@@ -331,11 +442,144 @@ class CognitiveExperimentEngine:
 
             if hypothesis.get(
                 "hypothesis"
-            ) == hypothesis_name:
+            ) != hypothesis_name:
+                continue
 
-                return hypothesis
+            selected = dict(
+                hypothesis
+            )
+
+            learned = (
+                self._get_learned_record(
+                    hypothesis_name
+                )
+            )
+
+            if learned is not None:
+
+                selected[
+                    "learned"
+                ] = True
+
+                selected[
+                    "score"
+                ] = learned.get(
+                    "score"
+                )
+
+                selected[
+                    "average_error"
+                ] = learned.get(
+                    "average_error"
+                )
+
+                selected[
+                    "attempts"
+                ] = learned.get(
+                    "attempts"
+                )
+
+                selected[
+                    "exploration"
+                ] = False
+
+            else:
+
+                selected.setdefault(
+                    "learned",
+                    False
+                )
+
+                selected.setdefault(
+                    "exploration",
+                    False
+                )
+
+            return selected
 
         return None
+
+    def _find_learned_hypothesis(
+        self,
+        hypothesis_name
+    ):
+        """
+        Reconstruct a learned hypothesis that may not exist
+        in the current static hypothesis list.
+
+        Such a hypothesis is valid because its evidence comes
+        directly from HypothesisLearningEngine.
+        """
+
+        learned = (
+            self._get_learned_record(
+                hypothesis_name
+            )
+        )
+
+        if learned is None:
+            return None
+
+        return {
+            "hypothesis": hypothesis_name,
+            "priority": 0,
+            "learned": True,
+            "exploration": False,
+            "score": learned.get(
+                "score"
+            ),
+            "average_error": learned.get(
+                "average_error"
+            ),
+            "attempts": learned.get(
+                "attempts"
+            )
+        }
+
+    def _get_learned_record(
+        self,
+        hypothesis_name
+    ):
+        """
+        Return the real learned record for a hypothesis.
+
+        Returns None when no learning evidence exists.
+        """
+
+        hypothesis_learning = getattr(
+            self.hypothesis_planner,
+            "hypothesis_learning",
+            None
+        )
+
+        if hypothesis_learning is None:
+            return None
+
+        evaluate = getattr(
+            hypothesis_learning,
+            "evaluate",
+            None
+        )
+
+        if not callable(evaluate):
+            return None
+
+        result = evaluate(
+            hypothesis_name
+        )
+
+        if not isinstance(
+            result,
+            dict
+        ):
+            return None
+
+        if result.get(
+            "status"
+        ) == "unseen":
+            return None
+
+        return result
 
     def predict(
         self,
@@ -404,13 +648,6 @@ class CognitiveExperimentEngine:
         """
         Seed the selected hypothesis with the exact
         prediction that was actually used.
-
-        This is important because the first observed
-        actual result must be compared against the
-        prediction that produced the experiment.
-
-        The seed is only created when no hypothesis-
-        specific prediction exists yet.
         """
 
         prediction_engine = (
@@ -569,10 +806,7 @@ class CognitiveExperimentEngine:
             )
         )
 
-        if seed_result["status"] in (
-            "failed",
-        ):
-
+        if seed_result["status"] == "failed":
             return seed_result
 
         experiment_result = self.run_experiment(
@@ -587,8 +821,20 @@ class CognitiveExperimentEngine:
             "actual"
         ]
 
+        closed_loop = getattr(
+            self.experiment_loop,
+            "closed_loop",
+            None
+        )
+
+        if closed_loop is None:
+            return {
+                "status": "failed",
+                "reason": "closed_loop_not_configured"
+            }
+
         learning_result = (
-            self.experiment_loop.closed_loop.learn(
+            closed_loop.learn(
                 observation=observation,
                 prediction=used_prediction,
                 actual=actual
@@ -628,107 +874,4 @@ class CognitiveExperimentEngine:
                 hypothesis=hypothesis_name,
                 difference=difference
             )
-        )
-
-        return {
-            "status": "completed",
-            "goal": goal_state.get("goal"),
-            "hypotheses": reasoning["hypotheses"],
-            "selected_hypothesis": selected_hypothesis,
-            "executive_reasoning": reasoning.get(
-                "executive_reasoning"
-            ),
-            "plan": reasoning["plan"],
-            "observation": observation,
-            "prediction": used_prediction,
-            "actual": actual,
-            "difference": difference,
-            "learning": learning_result[
-                "cycle"
-            ]["learning"],
-            "world_model": learning_result[
-                "cycle"
-            ]["world_model"],
-            "hypothesis_prediction_learning": (
-                hypothesis_prediction_learning
-            ),
-            "hypothesis_learning": (
-                hypothesis_learning
-            ),
-            "cycle": learning_result[
-                "cycle"
-            ],
-            "stopped": learning_result[
-                "stopped"
-            ]
-        }
-
-    def stop(self):
-        return self.experiment_loop.stop()
-
-    def reset(self):
-        return self.experiment_loop.reset()
-
-    def get_history(self):
-        return self.experiment_loop.get_history()
-
-    def get_cycle_count(self):
-        return self.experiment_loop.get_cycle_count()
-
-    def is_stopped(self):
-        return self.experiment_loop.is_stopped()
-
-    def get_learned_hypotheses(self):
-        return self.hypothesis_planner.get_learned_hypotheses()
-
-    def clear_learning(self):
-        return self.hypothesis_planner.clear_learning()
-
-    def get_configuration(self):
-        configuration = {
-            "hypothesis_planner": type(
-                self.hypothesis_planner
-            ).__name__,
-            "executive_reasoning": type(
-                self.executive_reasoning
-            ).__name__,
-            "experiment_loop": type(
-                self.experiment_loop
-            ).__name__
-        }
-
-        prediction_engine = (
-            self._get_prediction_engine()
-        )
-
-        configuration[
-            "prediction_engine"
-        ] = (
-            type(
-                prediction_engine
-            ).__name__
-            if prediction_engine is not None
-            else None
-        )
-
-        adaptive_predictor = (
-            getattr(
-                prediction_engine,
-                "adaptive_predictor",
-                None
-            )
-            if prediction_engine is not None
-            else None
-        )
-
-        configuration[
-            "adaptive_predictor"
-        ] = (
-            type(
-                adaptive_predictor
-            ).__name__
-            if adaptive_predictor is not None
-            else None
-        )
-
-        return configuration
+     
