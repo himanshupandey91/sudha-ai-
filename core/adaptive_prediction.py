@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Prediction Engine
 
-Version 0.6
+Version 0.7
 
 Uses previous experience to adapt future predictions.
 
@@ -15,7 +15,7 @@ Hierarchical Memory
         ↓
 Relevant Previous Experience
         ↓
-Prediction Error / Actual Outcome
+Observed Actual Outcome
         ↓
 Adaptive Prediction
 
@@ -23,8 +23,11 @@ Compatibility:
 - Preserves existing MemoryEngine behavior
 - Supports optional HierarchicalMemory
 - Uses exact observation matching
-- Supports scalar and structured predictions
-- Uses previous actual outcome for structured prediction
+- Supports numeric predictions
+- Supports structured predictions
+- Uses actual outcomes when available
+- Uses prediction error only as a fallback
+- HierarchicalMemory has priority over legacy MemoryEngine
 - Avoids duplicate historical error counting
 - Deterministic behavior
 - No external side effects
@@ -63,7 +66,9 @@ class AdaptivePredictionEngine:
             else MemoryEngine()
         )
 
-        self.hierarchical_memory = hierarchical_memory
+        self.hierarchical_memory = (
+            hierarchical_memory
+        )
 
     def predict(self, observation):
         """
@@ -73,10 +78,11 @@ class AdaptivePredictionEngine:
 
         1. Generate base prediction.
         2. Search HierarchicalMemory.
-        3. Search legacy MemoryEngine.
-        4. Use matching previous experience.
-        5. Use historical average error.
-        6. Return base prediction.
+        3. Use the most recent matching hierarchical experience.
+        4. Search compatibility MemoryEngine.
+        5. Use the most recent matching legacy experience.
+        6. Use historical average error for numeric predictions.
+        7. Return the base prediction.
 
         HierarchicalMemory is preferred because it is the
         structured memory system.
@@ -384,22 +390,26 @@ class AdaptivePredictionEngine:
         Convert previous experience into
         an adaptive prediction.
 
-        Supported cases:
+        Priority:
 
-        1. Numeric prediction:
-           base_prediction + difference
+        1. Use observed actual outcome when available.
+        2. Adapt structured predictions using actual outcome.
+        3. Use numeric error correction when actual
+           outcome is unavailable.
+        4. Fall back to previous prediction.
 
-        2. Structured/dictionary prediction:
-           If the previous experience has an actual scalar
-           and the base prediction contains a compatible
-           numeric 'value' field, update that field using
-           the observed actual outcome.
+        Important:
 
-        3. Non-numeric learned prediction:
-           Return the previous prediction directly.
+        `difference` is normally an absolute error.
 
-        The structured case is important because Sudha AI
-        observations are often represented as dictionaries.
+        Therefore:
+
+            difference = abs(actual - prediction)
+
+        cannot safely determine the direction of correction.
+
+        When `actual` exists, it is the authoritative
+        observed target and must be preferred.
         """
 
         if not isinstance(
@@ -420,59 +430,51 @@ class AdaptivePredictionEngine:
             "difference"
         )
 
-        # Case 1: Numeric prediction + numeric difference
-        if (
-            isinstance(
-                previous_prediction,
-                (int, float)
-            )
-            and isinstance(
-                difference,
-                (int, float)
-            )
-            and isinstance(
-                base_prediction,
-                (int, float)
-            )
-        ):
-            return (
-                base_prediction
-                + difference
-            )
+        # -------------------------------------------------
+        # Case 1: Numeric actual outcome
+        # -------------------------------------------------
 
-        # Case 2: Structured prediction with scalar actual
-        if (
-            isinstance(
-                base_prediction,
-                dict
-            )
-            and isinstance(
-                previous_prediction,
-                dict
-            )
-            and isinstance(
-                actual,
-                (int, float)
-            )
+        if isinstance(
+            actual,
+            (int, float)
         ):
-            structured_prediction = dict(
-                base_prediction
-            )
+            if isinstance(
+                base_prediction,
+                (int, float)
+            ):
+                return actual
 
             if (
-                "value" in structured_prediction
+                isinstance(
+                    base_prediction,
+                    dict
+                )
                 and isinstance(
-                    structured_prediction["value"],
-                    (int, float)
+                    previous_prediction,
+                    dict
                 )
             ):
-                structured_prediction[
-                    "value"
-                ] = actual
+                structured_prediction = dict(
+                    base_prediction
+                )
 
-                return structured_prediction
+                if (
+                    "value" in structured_prediction
+                    and isinstance(
+                        structured_prediction["value"],
+                        (int, float)
+                    )
+                ):
+                    structured_prediction[
+                        "value"
+                    ] = actual
 
-        # Case 3: Structured actual outcome
+                    return structured_prediction
+
+        # -------------------------------------------------
+        # Case 2: Structured actual outcome
+        # -------------------------------------------------
+
         if (
             isinstance(
                 base_prediction,
@@ -509,7 +511,33 @@ class AdaptivePredictionEngine:
 
                 return structured_prediction
 
-        # Case 4: Previous prediction is available
+        # -------------------------------------------------
+        # Case 3: Numeric prediction + numeric difference
+        # -------------------------------------------------
+
+        if (
+            isinstance(
+                previous_prediction,
+                (int, float)
+            )
+            and isinstance(
+                difference,
+                (int, float)
+            )
+            and isinstance(
+                base_prediction,
+                (int, float)
+            )
+        ):
+            return (
+                base_prediction
+                + difference
+            )
+
+        # -------------------------------------------------
+        # Case 4: Previous learned prediction
+        # -------------------------------------------------
+
         if previous_prediction is not None:
             return previous_prediction
 
@@ -630,4 +658,4 @@ class AdaptivePredictionEngine:
                 )
                 else None
             ),
-        }
+            }
