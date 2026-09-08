@@ -1,30 +1,29 @@
 """
 Sudha AI - Adaptive Prediction Engine
 
-Version 0.4
+Version 0.5
 
 Uses previous experience to adapt future predictions.
 
-Core behavior:
+Prediction flow:
 
 Current Observation
         ↓
 Base Prediction
         ↓
-Previous Experiences
+Hierarchical Memory
         ↓
-Prediction Errors
+Relevant Previous Experience
         ↓
-Average Error
+Prediction Error
         ↓
 Adaptive Prediction
 
-Design goals:
-- Use previous experience
-- Learn from prediction error
-- Support average historical error
-- Preserve exact-match experience behavior
-- Backward-compatible interfaces
+Compatibility:
+- Preserves existing MemoryEngine behavior
+- Adds optional HierarchicalMemory context
+- Uses exact observation matching
+- Avoids duplicate historical error counting
 - Deterministic behavior
 - No external side effects
 """
@@ -39,10 +38,17 @@ class AdaptivePredictionEngine:
     def __init__(
         self,
         prediction_engine=None,
-        memory_engine=None
+        memory_engine=None,
+        hierarchical_memory=None
     ):
         """
         Initialize the adaptive prediction engine.
+
+        MemoryEngine remains supported for backward
+        compatibility.
+
+        HierarchicalMemory is optional and, when supplied,
+        becomes an additional source of previous experience.
         """
 
         self.prediction_engine = (
@@ -57,28 +63,57 @@ class AdaptivePredictionEngine:
             else MemoryEngine()
         )
 
+        self.hierarchical_memory = (
+            hierarchical_memory
+        )
+
     def predict(self, observation):
         """
         Generate an adaptive prediction.
 
-        Behavior:
+        Priority:
 
-        1. Generate the normal/base prediction.
-        2. Look at previous experiences.
-        3. Calculate the average historical error.
-        4. Apply that error to numeric predictions.
-        5. If an exact previous observation exists,
-           use its learned prediction directly.
+        1. Generate base prediction.
+        2. Search HierarchicalMemory for an exact
+           previous experience.
+        3. Search compatibility MemoryEngine.
+        4. Use exact previous experience when available.
+        5. Otherwise use historical average error.
+        6. Otherwise return base prediction.
+
+        HierarchicalMemory is preferred because it is the
+        new structured memory system.
         """
 
         base_prediction = self._base_prediction(
             observation
         )
 
+        hierarchical_memories = (
+            self._retrieve_hierarchical_memories(
+                observation
+            )
+        )
+
+        relevant_memory = (
+            self._find_relevant_memory(
+                observation,
+                hierarchical_memories
+            )
+        )
+
+        if relevant_memory is not None:
+
+            prediction = self._prediction_from_memory(
+                base_prediction,
+                relevant_memory
+            )
+
+            if prediction is not None:
+                return prediction
+
         memories = self._retrieve_memories()
 
-        # First preference:
-        # exact previous experience.
         relevant_memory = self._find_relevant_memory(
             observation,
             memories
@@ -86,38 +121,14 @@ class AdaptivePredictionEngine:
 
         if relevant_memory is not None:
 
-            previous_prediction = (
-                relevant_memory.get("prediction")
+            prediction = self._prediction_from_memory(
+                base_prediction,
+                relevant_memory
             )
 
-            difference = (
-                relevant_memory.get("difference")
-            )
+            if prediction is not None:
+                return prediction
 
-            if (
-                isinstance(
-                    previous_prediction,
-                    (int, float)
-                )
-                and isinstance(
-                    difference,
-                    (int, float)
-                )
-                and isinstance(
-                    base_prediction,
-                    (int, float)
-                )
-            ):
-                return (
-                    base_prediction
-                    + difference
-                )
-
-            if previous_prediction is not None:
-                return previous_prediction
-
-        # No exact experience:
-        # use historical average error.
         average_error = self._average_error(
             memories
         )
@@ -147,19 +158,36 @@ class AdaptivePredictionEngine:
             observation
         )
 
-        memories = self._retrieve_memories()
-
-        relevant_memory = self._find_relevant_memory(
-            observation,
-            memories
+        hierarchical_memories = (
+            self._retrieve_hierarchical_memories(
+                observation
+            )
         )
 
-        average_error = self._average_error(
-            memories
+        relevant_hierarchical_memory = (
+            self._find_relevant_memory(
+                observation,
+                hierarchical_memories
+            )
+        )
+
+        memories = self._retrieve_memories()
+
+        relevant_legacy_memory = (
+            self._find_relevant_memory(
+                observation,
+                memories
+            )
         )
 
         prediction = self.predict(
             observation
+        )
+
+        experience = (
+            relevant_hierarchical_memory
+            if relevant_hierarchical_memory is not None
+            else relevant_legacy_memory
         )
 
         return {
@@ -168,14 +196,25 @@ class AdaptivePredictionEngine:
             "base_prediction": base_prediction,
             "prediction": prediction,
             "experience_used": (
-                relevant_memory is not None
+                experience is not None
+            ),
+            "experience_source": (
+                "hierarchical_memory"
+                if relevant_hierarchical_memory is not None
+                else (
+                    "memory_engine"
+                    if relevant_legacy_memory is not None
+                    else None
+                )
             ),
             "experience": (
-                dict(relevant_memory)
-                if relevant_memory is not None
+                dict(experience)
+                if experience is not None
                 else None
             ),
-            "average_error": average_error
+            "average_error": self._average_error(
+                memories
+            )
         }
 
     def remember(
@@ -187,7 +226,12 @@ class AdaptivePredictionEngine:
         learning=None
     ):
         """
-        Store a new experience in memory.
+        Store a new experience in the
+        compatibility MemoryEngine.
+
+        HierarchicalMemory storage is handled by
+        ExperienceLearningEngine so that one experience
+        is not written twice.
         """
 
         memory = {
@@ -222,8 +266,8 @@ class AdaptivePredictionEngine:
 
     def _retrieve_memories(self):
         """
-        Retrieve memories using the supported
-        memory interface.
+        Retrieve memories from the compatibility
+        MemoryEngine.
         """
 
         retrieve_all = getattr(
@@ -247,6 +291,55 @@ class AdaptivePredictionEngine:
 
             else:
                 memories = []
+
+        if not isinstance(
+            memories,
+            list
+        ):
+            return []
+
+        return memories
+
+    def _retrieve_hierarchical_memories(
+        self,
+        observation
+    ):
+        """
+        Retrieve relevant episodic experiences from
+        HierarchicalMemory.
+
+        Exact matching is intentionally used for this
+        first integration step.
+
+        Returns only the episodic records relevant to
+        the current observation.
+        """
+
+        if self.hierarchical_memory is None:
+            return []
+
+        retrieve_matching = getattr(
+            self.hierarchical_memory,
+            "retrieve_episodic_matching",
+            None
+        )
+
+        if not callable(
+            retrieve_matching
+        ):
+            return []
+
+        try:
+            memories = retrieve_matching(
+                {
+                    "observation": observation
+                }
+            )
+        except (
+            TypeError,
+            ValueError
+        ):
+            return []
 
         if not isinstance(
             memories,
@@ -281,6 +374,56 @@ class AdaptivePredictionEngine:
             ) == observation:
 
                 return memory
+
+        return None
+
+    def _prediction_from_memory(
+        self,
+        base_prediction,
+        memory
+    ):
+        """
+        Convert a previous experience into an
+        adaptive prediction.
+
+        For numeric predictions and differences:
+
+            prediction =
+                base_prediction + difference
+
+        For non-numeric learned predictions,
+        return the previous prediction directly.
+        """
+
+        previous_prediction = memory.get(
+            "prediction"
+        )
+
+        difference = memory.get(
+            "difference"
+        )
+
+        if (
+            isinstance(
+                previous_prediction,
+                (int, float)
+            )
+            and isinstance(
+                difference,
+                (int, float)
+            )
+            and isinstance(
+                base_prediction,
+                (int, float)
+            )
+        ):
+            return (
+                base_prediction
+                + difference
+            )
+
+        if previous_prediction is not None:
+            return previous_prediction
 
         return None
 
@@ -338,6 +481,13 @@ class AdaptivePredictionEngine:
                     self.memory_engine
                 ).__name__
             ),
+            "hierarchical_memory": (
+                type(
+                    self.hierarchical_memory
+                ).__name__
+                if self.hierarchical_memory is not None
+                else None
+            ),
             "memory_size": (
                 self.memory_engine.size()
                 if hasattr(
@@ -345,5 +495,5 @@ class AdaptivePredictionEngine:
                     "size"
                 )
                 else None
-            )
-                    }
+            ),
+            }
