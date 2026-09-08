@@ -576,3 +576,68 @@ def test_real_learning_changes_next_cycle_without_manual_injection():
     assert selected_record["attempts"] == 2
 
     assert selected_record["average_error"] == 7.5
+
+
+def test_real_learning_continues_across_multiple_cycles():
+    experiment = HypothesisAwareExperiment(
+        result=20
+    )
+
+    engine = CognitiveExperimentEngine()
+
+    engine.experiment_loop.experiment = experiment
+
+    goal = {
+        "goal": "reduce_prediction_error"
+    }
+
+    first = engine.run_cycle(
+        goal,
+        10
+    )
+
+    assert first["status"] == "completed"
+    assert first["prediction"] == 10
+    assert first["actual"] == 20
+    assert first["difference"] == 10
+
+    experiment.result = 10
+
+    second = engine.run_cycle(
+        goal,
+        10
+    )
+
+    assert second["status"] == "completed"
+    assert second["prediction"] == 15
+    assert second["actual"] == 10
+    assert second["difference"] == 5
+
+    experiment.result = 20
+
+    third = engine.run_cycle(
+        goal,
+        10
+    )
+
+    assert third["status"] == "completed"
+    assert third["prediction"] == 12.5
+    assert third["actual"] == 20
+    assert third["difference"] == 7.5
+
+    learned = engine.get_learned_hypotheses()
+
+    selected_record = None
+
+    for record in learned:
+        if record["hypothesis"] == (
+            "use_recent_experience"
+        ):
+            selected_record = record
+            break
+
+    assert selected_record is not None
+    assert selected_record["attempts"] == 3
+    assert selected_record["average_error"] == (
+        (10 + 5 + 7.5) / 3
+    )
