@@ -420,10 +420,7 @@ class AdaptivePredictionEngine:
             "difference"
         )
 
-        # -------------------------------------------------
         # Case 1: Numeric prediction + numeric difference
-        # -------------------------------------------------
-
         if (
             isinstance(
                 previous_prediction,
@@ -443,23 +440,7 @@ class AdaptivePredictionEngine:
                 + difference
             )
 
-        # -------------------------------------------------
-        # Case 2: Structured prediction
-        #
-        # Example:
-        #
-        # base_prediction = {"value": 10}
-        # previous_prediction = {"value": 10}
-        # actual = 20
-        #
-        # New prediction:
-        #
-        # {"value": 20}
-        #
-        # This uses an observed outcome from memory instead
-        # of returning the unchanged dictionary.
-        # -------------------------------------------------
-
+        # Case 2: Structured prediction with scalar actual
         if (
             isinstance(
                 base_prediction,
@@ -491,17 +472,7 @@ class AdaptivePredictionEngine:
 
                 return structured_prediction
 
-        # -------------------------------------------------
         # Case 3: Structured actual outcome
-        #
-        # Example:
-        #
-        # base_prediction = {"value": 10}
-        # actual = {"value": 20}
-        #
-        # Use the observed structured outcome.
-        # -------------------------------------------------
-
         if (
             isinstance(
                 base_prediction,
@@ -538,10 +509,7 @@ class AdaptivePredictionEngine:
 
                 return structured_prediction
 
-        # -------------------------------------------------
         # Case 4: Previous prediction is available
-        # -------------------------------------------------
-
         if previous_prediction is not None:
             return previous_prediction
 
@@ -662,4 +630,4 @@ class AdaptivePredictionEngine:
                 )
                 else None
             ),
-                }
+        }
