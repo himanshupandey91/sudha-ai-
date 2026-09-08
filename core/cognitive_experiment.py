@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.8
+Version 0.8.1
 
 Connects:
 
@@ -33,7 +33,7 @@ World Model
     ↓
 Next Cycle
 
-Version 0.8:
+Version 0.8.1:
 - Integrates ExecutiveReasoningEngine.
 - Includes learned hypotheses that are not present in the
   current static hypothesis list.
@@ -55,6 +55,7 @@ Version 0.8:
 - No uncontrolled loops.
 - No external side effects by itself.
 - Fully testable.
+- Fixes the incomplete Version 0.8 file.
 """
 
 from core.hypothesis_planner import HypothesisPlanningEngine
@@ -762,6 +763,13 @@ class CognitiveExperimentEngine:
         goal_state,
         observation
     ):
+        """
+        Execute one complete cognitive experiment cycle.
+
+        The actual result is obtained from the experiment loop.
+        This engine does not invent the actual outcome.
+        """
+
         reasoning = self.reason(
             goal_state
         )
@@ -874,4 +882,227 @@ class CognitiveExperimentEngine:
                 hypothesis=hypothesis_name,
                 difference=difference
             )
-     
+        )
+
+        return {
+            "status": "completed",
+            "goal": goal_state.get(
+                "goal"
+            ) if isinstance(
+                goal_state,
+                dict
+            ) else goal_state,
+            "hypotheses": reasoning.get(
+                "hypotheses",
+                []
+            ),
+            "selected_hypothesis": (
+                selected_hypothesis
+            ),
+            "plan": reasoning.get(
+                "plan"
+            ),
+            "executive_reasoning": reasoning.get(
+                "executive_reasoning"
+            ),
+            "observation": observation,
+            "prediction": used_prediction,
+            "actual": actual,
+            "difference": difference,
+            "learning": learning_result[
+                "cycle"
+            ].get(
+                "learning"
+            ),
+            "world_model": learning_result[
+                "cycle"
+            ].get(
+                "world_model"
+            ),
+            "hypothesis_prediction_learning": (
+                hypothesis_prediction_learning
+            ),
+            "hypothesis_learning": (
+                hypothesis_learning
+            ),
+            "cycle": learning_result[
+                "cycle"
+            ],
+            "stopped": learning_result.get(
+                "stopped"
+            )
+        }
+
+    def stop(self):
+        """
+        Stop the configured experiment loop.
+        """
+
+        stop = getattr(
+            self.experiment_loop,
+            "stop",
+            None
+        )
+
+        if not callable(stop):
+            return {
+                "status": "unavailable",
+                "reason": "stop_not_available"
+            }
+
+        return stop()
+
+    def reset(self):
+        """
+        Reset the configured experiment loop.
+        """
+
+        reset = getattr(
+            self.experiment_loop,
+            "reset",
+            None
+        )
+
+        if not callable(reset):
+            return {
+                "status": "unavailable",
+                "reason": "reset_not_available"
+            }
+
+        return reset()
+
+    def get_history(self):
+        """
+        Return experiment-loop history when available.
+        """
+
+        getter = getattr(
+            self.experiment_loop,
+            "get_history",
+            None
+        )
+
+        if not callable(getter):
+            return []
+
+        return getter()
+
+    def get_cycle_count(self):
+        """
+        Return the number of completed cycles when available.
+        """
+
+        getter = getattr(
+            self.experiment_loop,
+            "get_cycle_count",
+            None
+        )
+
+        if not callable(getter):
+            return 0
+
+        return getter()
+
+    def is_stopped(self):
+        """
+        Return whether the configured experiment loop is stopped.
+        """
+
+        getter = getattr(
+            self.experiment_loop,
+            "is_stopped",
+            None
+        )
+
+        if not callable(getter):
+            return False
+
+        return getter()
+
+    def get_learned_hypotheses(self):
+        """
+        Return hypotheses learned by the hypothesis planner.
+        """
+
+        getter = getattr(
+            self.hypothesis_planner,
+            "get_learned_hypotheses",
+            None
+        )
+
+        if not callable(getter):
+            return []
+
+        return getter()
+
+    def clear_learning(self):
+        """
+        Clear hypothesis-performance learning when supported.
+        """
+
+        clearer = getattr(
+            self.hypothesis_planner,
+            "clear_learning",
+            None
+        )
+
+        if not callable(clearer):
+            return {
+                "status": "unavailable",
+                "reason": "clear_learning_not_available"
+            }
+
+        return clearer()
+
+    def get_configuration(self):
+        """
+        Return a deterministic configuration summary.
+        """
+
+        configuration = {
+            "hypothesis_planner": type(
+                self.hypothesis_planner
+            ).__name__,
+            "experiment_loop": type(
+                self.experiment_loop
+            ).__name__,
+            "executive_reasoning": type(
+                self.executive_reasoning
+            ).__name__
+        }
+
+        prediction_engine = (
+            self._get_prediction_engine()
+        )
+
+        configuration[
+            "prediction_engine"
+        ] = (
+            type(
+                prediction_engine
+            ).__name__
+            if prediction_engine is not None
+            else None
+        )
+
+        adaptive_predictor = (
+            getattr(
+                prediction_engine,
+                "adaptive_predictor",
+                None
+            )
+            if prediction_engine is not None
+            else None
+        )
+
+        configuration[
+            "adaptive_predictor"
+        ] = (
+            type(
+                adaptive_predictor
+            ).__name__
+            if adaptive_predictor is not None
+            else None
+        )
+
+        return configuration
