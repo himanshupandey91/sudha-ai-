@@ -95,8 +95,9 @@ class TestHierarchicalMemoryRetrieval:
             memory_types=["semantic"],
         )
 
-        assert len(result) == 1
-        assert result[0]["source"] == "semantic"
+        assert set(result.keys()) == {"semantic"}
+        assert len(result["semantic"]) == 1
+        assert result["semantic"][0]["source"] == "semantic"
 
     def test_retrieve_matching_can_search_multiple_memory_types(self):
         self.memory.store_episodic({
@@ -114,14 +115,16 @@ class TestHierarchicalMemoryRetrieval:
             memory_types=["episodic", "semantic"],
         )
 
-        assert len(result) == 2
-
-        sources = {record["source"] for record in result}
-
-        assert sources == {
-            "episode",
+        assert set(result.keys()) == {
+            "episodic",
             "semantic",
         }
+
+        assert len(result["episodic"]) == 1
+        assert len(result["semantic"]) == 1
+
+        assert result["episodic"][0]["source"] == "episode"
+        assert result["semantic"][0]["source"] == "semantic"
 
     def test_limit_returns_latest_matching_records(self):
         self.memory.store_episodic({
@@ -146,6 +149,19 @@ class TestHierarchicalMemoryRetrieval:
 
         assert len(result) == 2
         assert [record["id"] for record in result] == [2, 3]
+
+    def test_zero_limit_returns_empty_result(self):
+        self.memory.store_episodic({
+            "topic": "physics",
+            "id": 1,
+        })
+
+        result = self.memory.retrieve_episodic_matching(
+            {"topic": "physics"},
+            limit=0,
+        )
+
+        assert result == []
 
     def test_empty_criteria_matches_all_records(self):
         self.memory.store_episodic({
@@ -196,11 +212,11 @@ class TestHierarchicalMemoryRetrieval:
                 memory_types=["unknown"],
             )
 
-    def test_invalid_limit_is_rejected(self):
-        with pytest.raises(ValueError):
+    def test_non_integer_limit_is_rejected(self):
+        with pytest.raises(TypeError):
             self.memory.retrieve_matching(
                 {"topic": "physics"},
-                limit=0,
+                limit=1.5,
             )
 
     def test_negative_limit_is_rejected(self):
