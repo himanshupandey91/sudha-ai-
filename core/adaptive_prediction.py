@@ -1,7 +1,7 @@
 """
 Sudha AI - Adaptive Prediction Engine
 
-Version 0.5
+Version 0.6
 
 Uses previous experience to adapt future predictions.
 
@@ -15,19 +15,20 @@ Hierarchical Memory
         ↓
 Relevant Previous Experience
         ↓
-Prediction Error
+Prediction Error / Actual Outcome
         ↓
 Adaptive Prediction
 
 Compatibility:
 - Preserves existing MemoryEngine behavior
-- Adds optional HierarchicalMemory context
+- Supports optional HierarchicalMemory
 - Uses exact observation matching
+- Supports scalar and structured predictions
+- Uses previous actual outcome for structured prediction
 - Avoids duplicate historical error counting
 - Deterministic behavior
 - No external side effects
 """
-
 
 from core.prediction import PredictionEngine
 from core.memory import MemoryEngine
@@ -44,11 +45,10 @@ class AdaptivePredictionEngine:
         """
         Initialize the adaptive prediction engine.
 
-        MemoryEngine remains supported for backward
-        compatibility.
+        MemoryEngine remains supported for backward compatibility.
 
         HierarchicalMemory is optional and, when supplied,
-        becomes an additional source of previous experience.
+        becomes the preferred source of previous experience.
         """
 
         self.prediction_engine = (
@@ -63,9 +63,7 @@ class AdaptivePredictionEngine:
             else MemoryEngine()
         )
 
-        self.hierarchical_memory = (
-            hierarchical_memory
-        )
+        self.hierarchical_memory = hierarchical_memory
 
     def predict(self, observation):
         """
@@ -74,15 +72,14 @@ class AdaptivePredictionEngine:
         Priority:
 
         1. Generate base prediction.
-        2. Search HierarchicalMemory for an exact
-           previous experience.
-        3. Search compatibility MemoryEngine.
-        4. Use exact previous experience when available.
-        5. Otherwise use historical average error.
-        6. Otherwise return base prediction.
+        2. Search HierarchicalMemory.
+        3. Search legacy MemoryEngine.
+        4. Use matching previous experience.
+        5. Use historical average error.
+        6. Return base prediction.
 
         HierarchicalMemory is preferred because it is the
-        new structured memory system.
+        structured memory system.
         """
 
         base_prediction = self._base_prediction(
@@ -103,7 +100,6 @@ class AdaptivePredictionEngine:
         )
 
         if relevant_memory is not None:
-
             prediction = self._prediction_from_memory(
                 base_prediction,
                 relevant_memory
@@ -114,13 +110,14 @@ class AdaptivePredictionEngine:
 
         memories = self._retrieve_memories()
 
-        relevant_memory = self._find_relevant_memory(
-            observation,
-            memories
+        relevant_memory = (
+            self._find_relevant_memory(
+                observation,
+                memories
+            )
         )
 
         if relevant_memory is not None:
-
             prediction = self._prediction_from_memory(
                 base_prediction,
                 relevant_memory
@@ -133,11 +130,13 @@ class AdaptivePredictionEngine:
             memories
         )
 
-        if isinstance(
-            base_prediction,
-            (int, float)
-        ) and average_error is not None:
-
+        if (
+            isinstance(
+                base_prediction,
+                (int, float)
+            )
+            and average_error is not None
+        ):
             return (
                 base_prediction
                 + average_error
@@ -278,7 +277,6 @@ class AdaptivePredictionEngine:
 
         if callable(retrieve_all):
             memories = retrieve_all()
-
         else:
             retrieve = getattr(
                 self.memory_engine,
@@ -288,7 +286,6 @@ class AdaptivePredictionEngine:
 
             if callable(retrieve):
                 memories = retrieve()
-
             else:
                 memories = []
 
@@ -308,11 +305,8 @@ class AdaptivePredictionEngine:
         Retrieve relevant episodic experiences from
         HierarchicalMemory.
 
-        Exact matching is intentionally used for this
-        first integration step.
-
-        Returns only the episodic records relevant to
-        the current observation.
+        Exact matching is intentionally used for
+        this integration stage.
         """
 
         if self.hierarchical_memory is None:
@@ -359,10 +353,15 @@ class AdaptivePredictionEngine:
         experience for the observation.
         """
 
+        if not isinstance(
+            memories,
+            list
+        ):
+            return None
+
         for memory in reversed(
             memories
         ):
-
             if not isinstance(
                 memory,
                 dict
@@ -372,7 +371,6 @@ class AdaptivePredictionEngine:
             if memory.get(
                 "observation"
             ) == observation:
-
                 return memory
 
         return None
@@ -383,25 +381,48 @@ class AdaptivePredictionEngine:
         memory
     ):
         """
-        Convert a previous experience into an
-        adaptive prediction.
+        Convert previous experience into
+        an adaptive prediction.
 
-        For numeric predictions and differences:
+        Supported cases:
 
-            prediction =
-                base_prediction + difference
+        1. Numeric prediction:
+           base_prediction + difference
 
-        For non-numeric learned predictions,
-        return the previous prediction directly.
+        2. Structured/dictionary prediction:
+           If the previous experience has an actual scalar
+           and the base prediction contains a compatible
+           numeric 'value' field, update that field using
+           the observed actual outcome.
+
+        3. Non-numeric learned prediction:
+           Return the previous prediction directly.
+
+        The structured case is important because Sudha AI
+        observations are often represented as dictionaries.
         """
+
+        if not isinstance(
+            memory,
+            dict
+        ):
+            return None
 
         previous_prediction = memory.get(
             "prediction"
         )
 
+        actual = memory.get(
+            "actual"
+        )
+
         difference = memory.get(
             "difference"
         )
+
+        # -------------------------------------------------
+        # Case 1: Numeric prediction + numeric difference
+        # -------------------------------------------------
 
         if (
             isinstance(
@@ -422,10 +443,147 @@ class AdaptivePredictionEngine:
                 + difference
             )
 
+        # -------------------------------------------------
+        # Case 2: Structured prediction
+        #
+        # Example:
+        #
+        # base_prediction = {"value": 10}
+        # previous_prediction = {"value": 10}
+        # actual = 20
+        #
+        # New prediction:
+        #
+        # {"value": 20}
+        #
+        # This uses an observed outcome from memory instead
+        # of returning the unchanged dictionary.
+        # -------------------------------------------------
+
+        if (
+            isinstance(
+                base_prediction,
+                dict
+            )
+            and isinstance(
+                previous_prediction,
+                dict
+            )
+            and isinstance(
+                actual,
+                (int, float)
+            )
+        ):
+            structured_prediction = dict(
+                base_prediction
+            )
+
+            if (
+                "value" in structured_prediction
+                and isinstance(
+                    structured_prediction["value"],
+                    (int, float)
+                )
+            ):
+                structured_prediction[
+                    "value"
+                ] = actual
+
+                return structured_prediction
+
+        # -------------------------------------------------
+        # Case 3: Structured actual outcome
+        #
+        # Example:
+        #
+        # base_prediction = {"value": 10}
+        # actual = {"value": 20}
+        #
+        # Use the observed structured outcome.
+        # -------------------------------------------------
+
+        if (
+            isinstance(
+                base_prediction,
+                dict
+            )
+            and isinstance(
+                previous_prediction,
+                dict
+            )
+            and isinstance(
+                actual,
+                dict
+            )
+        ):
+            if self._has_numeric_overlap(
+                base_prediction,
+                actual
+            ):
+                structured_prediction = dict(
+                    base_prediction
+                )
+
+                for key, value in actual.items():
+                    if (
+                        key in structured_prediction
+                        and isinstance(
+                            value,
+                            (int, float)
+                        )
+                    ):
+                        structured_prediction[
+                            key
+                        ] = value
+
+                return structured_prediction
+
+        # -------------------------------------------------
+        # Case 4: Previous prediction is available
+        # -------------------------------------------------
+
         if previous_prediction is not None:
             return previous_prediction
 
         return None
+
+    def _has_numeric_overlap(
+        self,
+        base_prediction,
+        actual
+    ):
+        """
+        Check whether two dictionaries contain at least
+        one shared numeric field.
+        """
+
+        if not isinstance(
+            base_prediction,
+            dict
+        ):
+            return False
+
+        if not isinstance(
+            actual,
+            dict
+        ):
+            return False
+
+        for key, value in actual.items():
+            if (
+                key in base_prediction
+                and isinstance(
+                    base_prediction[key],
+                    (int, float)
+                )
+                and isinstance(
+                    value,
+                    (int, float)
+                )
+            ):
+                return True
+
+        return False
 
     def _average_error(
         self,
@@ -438,10 +596,15 @@ class AdaptivePredictionEngine:
         Only numeric differences are used.
         """
 
+        if not isinstance(
+            memories,
+            list
+        ):
+            return None
+
         errors = []
 
         for memory in memories:
-
             if not isinstance(
                 memory,
                 dict
@@ -463,7 +626,10 @@ class AdaptivePredictionEngine:
         if len(errors) == 0:
             return None
 
-        return sum(errors) / len(errors)
+        return (
+            sum(errors)
+            / len(errors)
+        )
 
     def get_configuration(self):
         """
@@ -496,4 +662,4 @@ class AdaptivePredictionEngine:
                 )
                 else None
             ),
-            }
+                }
