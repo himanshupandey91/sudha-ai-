@@ -1,11 +1,13 @@
 """
 Sudha AI - Experience Learning Engine
 
-Version 0.3
+Version 0.4
 
 Connects:
 
 Prediction
+    ↓
+Hierarchical Memory Retrieval
     ↓
 Actual Outcome
     ↓
@@ -13,21 +15,18 @@ Difference
     ↓
 Learning Signal
     ↓
-Memory
-    ↓
-Hierarchical Memory
+Memory Update
     ↓
 World Model
-    ↓
-Adaptive Prediction
 
-Version 0.3:
-- Preserves the existing MemoryEngine API
-- Adds HierarchicalMemory integration
+Version 0.4:
+- Preserves existing MemoryEngine API
+- Integrates HierarchicalMemory into prediction
+- Retrieves relevant episodic experience before prediction
 - Stores completed experiences in episodic memory
 - Stores learned knowledge in semantic memory
 - Stores learning procedure information in procedural memory
-- Keeps AdaptivePredictionEngine compatible with MemoryEngine
+- Keeps AdaptivePredictionEngine compatible
 - Never invents actual outcomes
 - Deterministic behavior
 - No external side effects
@@ -55,11 +54,11 @@ class ExperienceLearningEngine:
         """
         Initialize the experience-learning system.
 
-        MemoryEngine remains the compatibility memory used by
-        AdaptivePredictionEngine.
+        MemoryEngine remains the compatibility memory.
 
-        HierarchicalMemory stores the same learning experience
-        across specialized memory layers.
+        HierarchicalMemory is now also connected directly
+        to AdaptivePredictionEngine so previous episodic
+        experiences can influence future predictions.
         """
 
         self.memory = (
@@ -78,7 +77,8 @@ class ExperienceLearningEngine:
             adaptive_prediction
             if adaptive_prediction is not None
             else AdaptivePredictionEngine(
-                memory_engine=self.memory
+                memory_engine=self.memory,
+                hierarchical_memory=self.hierarchical_memory
             )
         )
 
@@ -102,7 +102,12 @@ class ExperienceLearningEngine:
 
     def predict(self, observation):
         """
-        Generate a prediction using previous experience.
+        Generate a prediction using:
+
+        1. Base prediction
+        2. Relevant hierarchical memory
+        3. Compatibility memory
+        4. Adaptive prediction
         """
 
         prediction = self.adaptive_prediction.predict(
@@ -242,15 +247,17 @@ class ExperienceLearningEngine:
 
             observation
                 ↓
+            hierarchical memory retrieval
+                ↓
             prediction
+                ↓
+            actual
                 ↓
             difference
                 ↓
             learning
                 ↓
-            memory
-                ↓
-            hierarchical memory
+            memory update
                 ↓
             world model
         """
