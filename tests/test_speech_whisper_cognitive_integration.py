@@ -1,7 +1,7 @@
 """
 Sudha AI - Real Whisper to Cognitive Pipeline Integration
 
-Step 63-B
+Step 64-A
 
 Validates the real runtime path:
 
@@ -17,12 +17,25 @@ CognitivePipeline
     ↓
 Perception
     ↓
-Unified Observation
+Prediction
+    ↓
+Actual Outcome
+    ↓
+Difference
+    ↓
+Learning
 
-This test intentionally uses the real whisper.cpp executable,
-real tiny.en model, and real JFK sample audio.
+This test intentionally uses:
 
-No deterministic speech mock is used here.
+- real whisper.cpp executable
+- real tiny.en model
+- real JFK sample audio
+
+No deterministic speech mock is used for the
+speech-recognition boundary.
+
+The actual outcome is supplied explicitly to the
+cognitive pipeline. It is never invented by the test.
 """
 
 from pathlib import Path
@@ -57,10 +70,12 @@ JFK_AUDIO = (
 )
 
 
-def test_real_whisper_recognizes_jfk_audio():
+def create_real_speech_engine():
     """
-    Verify that the real whisper.cpp backend can transcribe
-    the real JFK sample audio.
+    Create the real Whisper speech-recognition engine.
+
+    This helper performs only environment validation and
+    dependency construction. It does not mock Whisper.
     """
 
     assert WHISPER_EXECUTABLE.is_file()
@@ -75,9 +90,17 @@ def test_real_whisper_recognizes_jfk_audio():
 
     assert backend.is_configured()
 
-    speech = SpeechRecognitionEngine(
+    return SpeechRecognitionEngine(
         backend=backend
     )
+
+
+def recognize_jfk_audio():
+    """
+    Run the real JFK audio through whisper.cpp.
+    """
+
+    speech = create_real_speech_engine()
 
     result = speech.recognize_file(
         JFK_AUDIO
@@ -98,39 +121,39 @@ def test_real_whisper_recognizes_jfk_audio():
         "what your country can do for you" in text
     )
 
+    return result
+
+
+def test_real_whisper_recognizes_jfk_audio():
+    """
+    Verify that real whisper.cpp recognizes the real
+    JFK sample audio.
+    """
+
+    result = recognize_jfk_audio()
+
+    assert result["status"] == "recognized"
+
+    assert isinstance(
+        result["text"],
+        str
+    )
+
+    assert result["text"].strip()
+
 
 def test_real_whisper_output_enters_cognitive_perception():
     """
-    Verify the real Whisper transcription can cross the
-    speech-recognition boundary and enter CognitivePipeline.
+    Verify that the real Whisper transcription crosses
+    the speech-recognition boundary and enters perception.
     """
 
-    assert WHISPER_EXECUTABLE.is_file()
-    assert WHISPER_MODEL.is_file()
-    assert JFK_AUDIO.is_file()
-
-    backend = WhisperCLIBackend(
-        executable_path=WHISPER_EXECUTABLE,
-        model_path=WHISPER_MODEL,
-        timeout_seconds=120,
-    )
-
-    speech = SpeechRecognitionEngine(
-        backend=backend
-    )
-
-    recognition = speech.recognize_file(
-        JFK_AUDIO
-    )
-
-    assert recognition["status"] == "recognized"
-
-    recognized_text = recognition["text"]
+    recognition = recognize_jfk_audio()
 
     pipeline = CognitivePipeline()
 
     observation = pipeline.perceive_text(
-        recognized_text
+        recognition["text"]
     )
 
     assert observation["status"] == (
@@ -139,31 +162,17 @@ def test_real_whisper_output_enters_cognitive_perception():
 
     assert (
         observation["data"]["text"]
-        == recognized_text
+        == recognition["text"]
     )
 
 
 def test_real_speech_to_perception_preserves_transcription():
     """
     Verify that the exact transcription produced by
-    whisper.cpp is preserved when entering perception.
+    whisper.cpp is preserved by the perception layer.
     """
 
-    backend = WhisperCLIBackend(
-        executable_path=WHISPER_EXECUTABLE,
-        model_path=WHISPER_MODEL,
-        timeout_seconds=120,
-    )
-
-    speech = SpeechRecognitionEngine(
-        backend=backend
-    )
-
-    recognition = speech.recognize_file(
-        JFK_AUDIO
-    )
-
-    assert recognition["status"] == "recognized"
+    recognition = recognize_jfk_audio()
 
     pipeline = CognitivePipeline()
 
@@ -183,26 +192,11 @@ def test_real_speech_to_perception_preserves_transcription():
 
 def test_real_speech_pipeline_configuration():
     """
-    Verify the cognitive pipeline still exposes its
-    expected component configuration after real speech
-    has entered perception.
+    Verify the cognitive pipeline configuration after
+    real speech has entered perception.
     """
 
-    backend = WhisperCLIBackend(
-        executable_path=WHISPER_EXECUTABLE,
-        model_path=WHISPER_MODEL,
-        timeout_seconds=120,
-    )
-
-    speech = SpeechRecognitionEngine(
-        backend=backend
-    )
-
-    recognition = speech.recognize_file(
-        JFK_AUDIO
-    )
-
-    assert recognition["status"] == "recognized"
+    recognition = recognize_jfk_audio()
 
     pipeline = CognitivePipeline()
 
@@ -232,4 +226,103 @@ def test_real_speech_pipeline_configuration():
 
     assert configuration["learning"] == (
         "LearningEngine"
+    )
+
+
+def test_real_speech_reaches_prediction():
+    """
+    Verify that the observation produced from real
+    Whisper speech can enter the prediction stage.
+    """
+
+    recognition = recognize_jfk_audio()
+
+    pipeline = CognitivePipeline()
+
+    observation = pipeline.perceive_text(
+        recognition["text"]
+    )
+
+    prediction = pipeline.predict(
+        observation
+    )
+
+    assert prediction["status"] == (
+        "predicted"
+    )
+
+    assert "prediction" in prediction
+
+
+def test_real_speech_reaches_difference_and_learning():
+    """
+    Verify the complete cognitive path:
+
+    Real speech
+        ↓
+    Whisper
+        ↓
+    Perception
+        ↓
+    Prediction
+        ↓
+    Explicit actual outcome
+        ↓
+    Difference
+        ↓
+    Learning
+
+    The actual outcome is intentionally supplied by
+    the test. It is not generated by Whisper or the
+    cognitive pipeline.
+    """
+
+    recognition = recognize_jfk_audio()
+
+    pipeline = CognitivePipeline()
+
+    actual = {
+        "text": recognition["text"]
+    }
+
+    result = pipeline.run_with_actual(
+        actual=actual,
+        text=recognition["text"]
+    )
+
+    assert result["status"] == (
+        "completed"
+    )
+
+    assert (
+        result["observation"]["status"]
+        == "observation_created"
+    )
+
+    assert (
+        result["prediction"]["status"]
+        == "predicted"
+    )
+
+    assert (
+        result["comparison"]["status"]
+        == "compared"
+    )
+
+    assert (
+        result["learning"]["status"]
+        == "learned"
+    )
+
+    assert (
+        result["comparison"]["actual"]
+        == actual
+    )
+
+    assert "difference" in (
+        result["comparison"]
+    )
+
+    assert "result" in (
+        result["learning"]
     )
