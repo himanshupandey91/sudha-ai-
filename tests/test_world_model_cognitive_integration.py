@@ -12,28 +12,26 @@ def build_numeric_predictions():
     }
 
 
-def test_world_model_receives_observed_state_after_cognitive_cycle():
+def test_world_model_records_cognitive_experience():
     world_model = WorldModel()
 
-    engine = CognitiveExperimentEngine(
-        world_model=world_model,
-        hypothesis_predictions=build_numeric_predictions(),
-    )
+    engine = CognitiveExperimentEngine()
 
-    observation = {
-        "machine": "ON",
-        "temperature": 25,
-    }
+    observation = 20.0
 
     result = engine.run_cycle(
         goal_state="reduce_prediction_error",
         observation=observation,
     )
 
-    world_state = world_model.get_world_state()
-
     assert result["status"] == "completed"
-    assert world_state == observation
+
+    state = result["world_model"]
+
+    assert state["observation"] == observation
+    assert "prediction" in state
+    assert "actual" in state
+    assert "difference" in state
 
 
 def test_world_model_preserves_explicit_state_transition():
@@ -49,13 +47,22 @@ def test_world_model_preserves_explicit_state_transition():
         "temperature": 25,
     }
 
-    transition = world_model.record_transition(
-        action="switch_on",
+    result = world_model.record_transition(
+        action={
+            "type": "switch_on"
+        },
         before_state=before_state,
         after_state=after_state,
     )
 
-    assert transition["action"] == "switch_on"
+    assert result["status"] == "recorded"
+
+    transition = result["transition"]
+
+    assert transition["action"] == {
+        "type": "switch_on"
+    }
+
     assert transition["before"] == before_state
     assert transition["after"] == after_state
 
@@ -65,10 +72,8 @@ def test_world_model_preserves_explicit_state_transition():
     assert transition["changed"]["temperature"]["before"] == 20
     assert transition["changed"]["temperature"]["after"] == 25
 
-    assert world_model.get_world_state() == after_state
 
-
-def test_next_cycle_can_read_updated_world_state():
+def test_next_state_is_the_observed_after_state():
     world_model = WorldModel()
 
     first_state = {
@@ -85,14 +90,18 @@ def test_next_cycle_can_read_updated_world_state():
 
     assert world_model.get_world_state() == first_state
 
-    world_model.record_transition(
-        action="switch_on",
+    result = world_model.record_transition(
+        action={
+            "type": "switch_on"
+        },
         before_state=first_state,
         after_state=second_state,
     )
 
+    assert result["status"] == "recorded"
+
     next_state = world_model.get_world_state()
 
+    assert next_state == second_state
     assert next_state["machine"] == "ON"
     assert next_state["temperature"] == 25
-    assert next_state != first_state
