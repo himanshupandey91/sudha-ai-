@@ -1,7 +1,7 @@
 """
 Sudha AI - Cognitive Experiment Engine
 
-Version 0.8.1
+Version 0.8.2
 
 Connects:
 
@@ -33,7 +33,7 @@ World Model
     ↓
 Next Cycle
 
-Version 0.8.1:
+Version 0.8.2:
 - Integrates ExecutiveReasoningEngine.
 - Includes learned hypotheses that are not present in the
   current static hypothesis list.
@@ -49,13 +49,14 @@ Version 0.8.1:
 - Preserves hypothesis performance learning.
 - Preserves legacy observation-based prediction behavior.
 - Keeps experiment results external to the predictor.
+- Integrates an optional shared WorldModel.
+- Ensures default experience learning uses the shared WorldModel.
 - Does not invent experiment results.
 - Does not fake adaptation.
 - Preserves bounded execution.
 - No uncontrolled loops.
 - No external side effects by itself.
 - Fully testable.
-- Fixes the incomplete Version 0.8 file.
 """
 
 from core.hypothesis_planner import HypothesisPlanningEngine
@@ -64,6 +65,8 @@ from core.closed_loop import ClosedLoopLearningEngine
 from core.prediction import PredictionEngine
 from core.adaptive_predictor import AdaptivePredictor
 from core.executive_reasoning import ExecutiveReasoningEngine
+from core.experience_learning import ExperienceLearningEngine
+from core.world_model import WorldModel
 
 
 class CognitiveExperimentEngine:
@@ -72,7 +75,8 @@ class CognitiveExperimentEngine:
         self,
         hypothesis_planner=None,
         experiment_loop=None,
-        executive_reasoning=None
+        executive_reasoning=None,
+        world_model=None
     ):
         self.hypothesis_planner = (
             hypothesis_planner
@@ -86,9 +90,31 @@ class CognitiveExperimentEngine:
             else ExecutiveReasoningEngine()
         )
 
+        self.world_model = world_model
+
         if experiment_loop is not None:
 
             self.experiment_loop = experiment_loop
+
+            if self.world_model is None:
+
+                closed_loop = getattr(
+                    experiment_loop,
+                    "closed_loop",
+                    None
+                )
+
+                experience_learning = getattr(
+                    closed_loop,
+                    "experience_learning",
+                    None
+                )
+
+                self.world_model = getattr(
+                    experience_learning,
+                    "world_model",
+                    None
+                )
 
         else:
 
@@ -106,10 +132,22 @@ class CognitiveExperimentEngine:
                 )
             )
 
+            if self.world_model is None:
+                self.world_model = WorldModel()
+
+            experience_learning = (
+                ExperienceLearningEngine(
+                    world_model=self.world_model
+                )
+            )
+
             self.experiment_loop = (
                 ExperimentLoopEngine(
                     closed_loop=(
                         ClosedLoopLearningEngine(
+                            experience_learning=(
+                                experience_learning
+                            ),
                             prediction_engine=(
                                 self.prediction_engine
                             )
