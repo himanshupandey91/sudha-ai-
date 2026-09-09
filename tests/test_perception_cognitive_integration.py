@@ -9,10 +9,13 @@ class DeterministicActualExperiment:
     """
     Controlled experiment source for integration testing.
 
-    The observation comes from the perception provider.
-    The actual result comes independently from this experiment.
-    This prevents the test from accidentally proving
-    observation == actual.
+    Observation comes from the perception provider.
+
+    Actual result comes independently from this experiment.
+
+    This keeps observation and actual result separate and
+    prevents the test from accidentally proving:
+        observation == actual
     """
 
     def __init__(self, actual_results):
@@ -21,9 +24,14 @@ class DeterministicActualExperiment:
 
     def run(self, observation, hypothesis=None):
         if self._index >= len(self._actual_results):
-            raise StopIteration("no more actual results")
+            raise StopIteration(
+                "no more actual results"
+            )
 
-        actual = self._actual_results[self._index]
+        actual = self._actual_results[
+            self._index
+        ]
+
         self._index += 1
 
         return {
@@ -35,6 +43,21 @@ class DeterministicActualExperiment:
 
 
 def create_engine(actual_results):
+    """
+    Create a cognitive experiment engine with:
+
+        Perception observation
+              ↓
+        Numeric prediction
+              ↓
+        External actual result
+              ↓
+        Learning
+
+    The numeric prediction is explicitly configured here
+    because PredictionEngine requires predictions to be numeric.
+    """
+
     engine = CognitiveExperimentEngine()
 
     experiment = DeterministicActualExperiment(
@@ -43,6 +66,38 @@ def create_engine(actual_results):
 
     engine.experiment_loop.experiment = experiment
 
+    prediction_engine = engine.prediction_engine
+
+    numeric_predictions = {
+        "collect_more_information": 10.0,
+        "collect_more_observations": 10.0,
+        "use_recent_experience": 10.0,
+        "increase_observation_frequency": 10.0,
+        "change_prediction_strategy": 10.0,
+    }
+
+    prediction_engine.hypothesis_predictions = dict(
+        numeric_predictions
+    )
+
+    adaptive_predictor = (
+        prediction_engine.adaptive_predictor
+    )
+
+    for hypothesis, prediction in (
+        numeric_predictions.items()
+    ):
+        if (
+            adaptive_predictor.predict(
+                hypothesis
+            )
+            is None
+        ):
+            adaptive_predictor.set_prediction(
+                hypothesis,
+                prediction
+            )
+
     return engine
 
 
@@ -50,17 +105,25 @@ def test_perception_observation_reaches_cognitive_engine():
     source_calls = []
 
     def source():
-        source_calls.append(len(source_calls))
+        source_calls.append(
+            len(source_calls)
+        )
 
         return {
             "text": "temperature reading"
         }
 
-    provider = PerceptionObservationProvider(source)
+    provider = PerceptionObservationProvider(
+        source
+    )
 
-    engine = create_engine([20])
+    engine = create_engine(
+        [20]
+    )
 
-    loop = AutonomousCognitiveLoop(engine)
+    loop = AutonomousCognitiveLoop(
+        engine
+    )
 
     result = loop.run(
         goal_state={
@@ -95,6 +158,13 @@ def test_perception_observation_reaches_cognitive_engine():
         "temperature reading"
     )
 
+    assert isinstance(
+        cycle["prediction"],
+        (int, float)
+    )
+
+    assert cycle["actual"] == 20
+
 
 def test_perception_observation_is_used_by_prediction_and_learning():
     observations = [
@@ -108,13 +178,16 @@ def test_perception_observation_is_used_by_prediction_and_learning():
         nonlocal index
 
         value = observations[index]
+
         index += 1
 
         return {
             "text": value
         }
 
-    provider = PerceptionObservationProvider(source)
+    provider = PerceptionObservationProvider(
+        source
+    )
 
     engine = create_engine(
         [
@@ -123,7 +196,9 @@ def test_perception_observation_is_used_by_prediction_and_learning():
         ]
     )
 
-    loop = AutonomousCognitiveLoop(engine)
+    loop = AutonomousCognitiveLoop(
+        engine
+    )
 
     result = loop.run(
         goal_state={
@@ -154,25 +229,30 @@ def test_perception_observation_is_used_by_prediction_and_learning():
     assert first["actual"] == 20
     assert second["actual"] == 10
 
-    assert "prediction" in first
-    assert "prediction" in second
+    assert first["prediction"] == 10.0
+    assert second["prediction"] == 15.0
+
+    assert first["prediction"] != second["prediction"]
 
     assert "difference" in first
     assert "difference" in second
 
+    assert first["difference"] == 10.0
+    assert second["difference"] == 5.0
+
     assert first["learning"] is not None
     assert second["learning"] is not None
 
-    assert first["hypothesis_prediction_learning"][
-        "status"
-    ] in {
+    assert first[
+        "hypothesis_prediction_learning"
+    ]["status"] in {
         "learned",
         "updated",
     }
 
-    assert second["hypothesis_prediction_learning"][
-        "status"
-    ] in {
+    assert second[
+        "hypothesis_prediction_learning"
+    ]["status"] in {
         "learned",
         "updated",
     }
@@ -196,11 +276,14 @@ def test_perception_does_not_replace_or_invent_observation_data():
         nonlocal index
 
         value = raw_inputs[index]
+
         index += 1
 
         return value
 
-    provider = PerceptionObservationProvider(source)
+    provider = PerceptionObservationProvider(
+        source
+    )
 
     engine = create_engine(
         [
@@ -209,7 +292,9 @@ def test_perception_does_not_replace_or_invent_observation_data():
         ]
     )
 
-    loop = AutonomousCognitiveLoop(engine)
+    loop = AutonomousCognitiveLoop(
+        engine
+    )
 
     result = loop.run(
         goal_state={
@@ -223,8 +308,13 @@ def test_perception_does_not_replace_or_invent_observation_data():
 
     history = loop.get_history()
 
-    first_observation = history[0]["observation"]
-    second_observation = history[1]["observation"]
+    first_observation = history[0][
+        "observation"
+    ]
+
+    second_observation = history[1][
+        "observation"
+    ]
 
     assert first_observation["data"] == {
         "text": "alpha",
@@ -236,15 +326,29 @@ def test_perception_does_not_replace_or_invent_observation_data():
         "image": b"image-beta",
     }
 
-    assert first_observation["modalities"] == [
+    assert first_observation[
+        "modalities"
+    ] == [
         "text",
         "voice",
     ]
 
-    assert second_observation["modalities"] == [
+    assert second_observation[
+        "modalities"
+    ] == [
         "text",
         "image",
     ]
 
     assert history[0]["actual"] == 100
     assert history[1]["actual"] == 200
+
+    assert isinstance(
+        history[0]["prediction"],
+        (int, float)
+    )
+
+    assert isinstance(
+        history[1]["prediction"],
+        (int, float)
+    )
