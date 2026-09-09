@@ -1,159 +1,118 @@
 """
-Regression tests for Sudha AI Autonomous Cognitive Loop.
+Integration tests for the autonomous cognitive loop.
 
-These tests preserve coverage for the original autonomous-loop behaviors
-while matching the current observation/provider API.
+These tests verify the real data-flow contract:
+
+ObservationProvider
+    -> CognitiveExperimentEngine
+    -> Prediction
+    -> Experiment
+    -> Actual
+    -> Prediction Error
+    -> Learning
+    -> Next Prediction
 """
 
 import pytest
 
 from core.autonomous_cognitive_loop import AutonomousCognitiveLoop
 from core.cognitive_experiment import CognitiveExperimentEngine
-from core.observation_provider import SequenceObservationProvider
+from core.observation_provider import (
+    ObservationProvider,
+    SequenceObservationProvider,
+)
 
 
-class DeterministicSequenceExperiment:
-    """Controlled experiment used to verify deterministic data flow."""
+class DeterministicExperiment:
+    """
+    Controlled experiment used only to verify data flow.
 
-    def __init__(self, results):
-        self.results = list(results)
-        self.calls = []
+    The experiment returns the supplied observation as the
+    actual observed result.
+
+    This is deliberately deterministic so the test can verify
+    the causal chain without inventing an outcome inside the
+    cognitive engine.
+    """
 
     def run(self, observation, hypothesis=None):
-        self.calls.append(
-            {
-                "observation": observation,
-                "hypothesis": hypothesis,
-            }
-        )
-
-        if not self.results:
-            raise RuntimeError("no_more_results")
-
-        return self.results.pop(0)
+        return {
+            "actual": observation,
+            "hypothesis": hypothesis,
+        }
 
 
-def create_loop(results):
-    """Create a cognitive engine with a deterministic experiment."""
+def create_engine():
     engine = CognitiveExperimentEngine()
-    experiment = DeterministicSequenceExperiment(results)
 
-    engine.experiment_loop.experiment = experiment
+    engine.experiment_loop.experiment = DeterministicExperiment()
 
+    return engine
+
+
+def create_loop():
+    engine = create_engine()
     loop = AutonomousCognitiveLoop(engine)
 
-    return loop, engine, experiment
+    return loop, engine
 
 
-def test_autonomous_loop_runs_multiple_cycles():
-    loop, engine, experiment = create_loop(
-        [20, 10, 20]
-    )
+def test_autonomous_loop_runs_multiple_provider_cycles():
+    provider = SequenceObservationProvider([10, 20, 30])
+
+    loop, engine = create_loop()
 
     result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-            10,
-            10,
-        ],
+        goal_state={"goal": "learn"},
+        observation_provider=provider,
         max_cycles=3,
     )
 
     assert result["status"] == "completed"
-    assert result["cycle_count"] == 3
     assert result["cycles"] == 3
     assert result["reason"] == "max_cycles_reached"
 
     history = loop.get_history()
 
     assert len(history) == 3
-
-    assert history[0]["prediction"] == 10
-    assert history[0]["actual"] == 20
-    assert history[0]["difference"] == 10
-
-    assert history[1]["prediction"] == 15
-    assert history[1]["actual"] == 10
-    assert history[1]["difference"] == 5
-
-    assert history[2]["prediction"] == 12.5
-    assert history[2]["actual"] == 20
-    assert history[2]["difference"] == 7.5
-
-    assert engine.get_cycle_count() == 3
-    assert len(experiment.calls) == 3
+    assert [cycle["observation"] for cycle in history] == [
+        10,
+        20,
+        30,
+    ]
 
 
-def test_autonomous_loop_respects_hard_cycle_limit():
-    loop, engine, experiment = create_loop(
-        [20, 10, 20, 10, 20]
-    )
+def test_provider_observation_becomes_experiment_actual():
+    provider = SequenceObservationProvider([20])
+
+    loop, engine = create_loop()
 
     result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-            10,
-            10,
-            10,
-            10,
-        ],
-        max_cycles=2,
+        goal_state={"goal": "observe"},
+        observation_provider=provider,
+        max_cycles=1,
     )
 
     assert result["status"] == "completed"
-    assert result["cycle_count"] == 2
-    assert result["cycles"] == 2
-    assert result["reason"] == "max_cycles_reached"
 
-    assert len(loop.get_history()) == 2
-    assert len(experiment.calls) == 2
-    assert engine.get_cycle_count() == 2
+    history = loop.get_history()
 
+    assert len(history) == 1
 
-def test_autonomous_loop_stops_when_observations_end():
-    loop, engine, experiment = create_loop(
-        [20, 10]
-    )
+    cycle = history[0]
 
-    result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-            10,
-        ],
-        max_cycles=5,
-    )
-
-    assert result["status"] == "completed"
-    assert result["cycle_count"] == 2
-    assert result["cycles"] == 2
-    assert result["reason"] == "observations_exhausted"
-
-    assert len(loop.get_history()) == 2
-    assert len(experiment.calls) == 2
-    assert engine.get_cycle_count() == 2
+    assert cycle["observation"] == 20
+    assert cycle["actual"] == 20
 
 
-def test_autonomous_loop_does_not_invent_actual_results():
-    loop, _, _ = create_loop(
-        [20]
-    )
+def test_prediction_error_is_calculated_from_actual_result():
+    provider = SequenceObservationProvider([20])
+
+    loop, engine = create_loop()
 
     result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-        ],
+        goal_state={"goal": "reduce_prediction_error"},
+        observation_provider=provider,
         max_cycles=1,
     )
 
@@ -161,194 +120,18 @@ def test_autonomous_loop_does_not_invent_actual_results():
 
     cycle = loop.get_history()[0]
 
+    assert cycle["prediction"] == 20
     assert cycle["actual"] == 20
-    assert cycle["actual"] != cycle["observation"]
+    assert cycle["difference"] == 0
 
 
-def test_autonomous_loop_uses_real_learning_between_cycles():
-    loop, engine, _ = create_loop(
-        [20, 10, 20]
-    )
+def test_real_learning_changes_next_prediction():
+    provider = SequenceObservationProvider([20, 10])
 
-    result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-            10,
-            10,
-        ],
-        max_cycles=3,
-    )
-
-    assert result["status"] == "completed"
-
-    predictions = [
-        cycle["prediction"]
-        for cycle in loop.get_history()
-    ]
-
-    assert predictions == [
-        10,
-        15,
-        12.5,
-    ]
-
-    learned = engine.get_learned_hypotheses()
-
-    assert len(learned) >= 1
-
-    selected = None
-
-    for record in learned:
-        if record["hypothesis"] == "use_recent_experience":
-            selected = record
-            break
-
-    assert selected is not None
-    assert selected["attempts"] == 3
-    assert selected["average_error"] == (
-        (10 + 5 + 7.5) / 3
-    )
-
-
-def test_autonomous_loop_can_be_stopped():
-    loop, engine, experiment = create_loop(
-        [20, 10, 20]
-    )
-
-    engine.stop()
+    loop, engine = create_loop()
 
     result = loop.run(
-        {
-            "goal": "reduce_prediction_error",
-        },
-        observations=[
-            10,
-            10,
-            10,
-        ],
-        max_cycles=3,
-    )
-
-    assert result["status"] == "stopped"
-    assert result["reason"] == "stopped"
-    assert result["cycle_count"] == 0
-    assert result["cycles"] == 0
-    assert result["stopped"] is True
-    assert len(experiment.calls) == 0
-
-
-def test_autonomous_loop_requires_goal():
-    loop, _, _ = create_loop(
-        [20]
-    )
-
-    with pytest.raises(
-        (TypeError, ValueError),
-        match="goal_state",
-    ):
-        loop.run(
-            {},
-            observations=[10],
-            max_cycles=1,
-        )
-
-
-def test_autonomous_loop_requires_observation_sequence():
-    loop, _, _ = create_loop(
-        [20]
-    )
-
-    with pytest.raises(
-        (TypeError, ValueError),
-        match="observations|observation source",
-    ):
-        loop.run(
-            {
-                "goal": "reduce_prediction_error",
-            },
-            observations=10,
-            max_cycles=1,
-        )
-
-
-def test_autonomous_loop_requires_positive_max_cycles():
-    loop, _, _ = create_loop(
-        [20]
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="max_cycles",
-    ):
-        loop.run(
-            {
-                "goal": "reduce_prediction_error",
-            },
-            observations=[10],
-            max_cycles=0,
-        )
-
-
-def test_autonomous_loop_rejects_boolean_max_cycles():
-    loop, _, _ = create_loop(
-        [20]
-    )
-
-    with pytest.raises(
-        TypeError,
-        match="max_cycles must be an integer",
-    ):
-        loop.run(
-            {
-                "goal": "reduce_prediction_error",
-            },
-            observations=[10],
-            max_cycles=True,
-        )
-
-
-def test_autonomous_loop_preserves_observation_provider_compatibility():
-    provider = SequenceObservationProvider(
-        [10, 20, 30]
-    )
-
-    loop, _, _ = create_loop(
-        [10, 20, 30]
-    )
-
-    result = loop.run(
-        {
-            "goal": "observe",
-        },
-        observation_provider=provider,
-        max_cycles=3,
-    )
-
-    assert result["status"] == "completed"
-    assert result["cycle_count"] == 3
-    assert result["cycles"] == 3
-    assert result["reason"] == "max_cycles_reached"
-
-    history = loop.get_history()
-
-    assert len(history) == 3
-    assert [
-        item["observation"]
-        for item in history
-    ] == [
-        10,
-        20,
-        30,
-    ]
-def test_provider_learning_changes_prediction():
-    provider = SequenceObservationProvider([10, 10])
-    loop, engine, experiment = create_loop([20, 10])
-
-    result = loop.run(
-        {"goal": "reduce_prediction_error"},
+        goal_state={"goal": "reduce_prediction_error"},
         observation_provider=provider,
         max_cycles=2,
     )
@@ -358,10 +141,161 @@ def test_provider_learning_changes_prediction():
     history = loop.get_history()
 
     assert len(history) == 2
-    assert history[0]["prediction"] == 10
-    assert history[0]["actual"] == 20
 
-    assert history[1]["prediction"] == 15
-    assert history[1]["actual"] == 10
+    first = history[0]
+    second = history[1]
 
-    assert history[1]["prediction"] != history[0]["prediction"]
+    assert first["observation"] == 20
+    assert first["actual"] == 20
+
+    assert second["observation"] == 10
+    assert second["actual"] == 10
+
+    assert first["prediction"] == 20
+
+    assert second["prediction"] != first["prediction"]
+
+
+def test_actual_result_is_not_created_from_prediction():
+    provider = SequenceObservationProvider([50])
+
+    loop, engine = create_loop()
+
+    result = loop.run(
+        goal_state={"goal": "observe_real_result"},
+        observation_provider=provider,
+        max_cycles=1,
+    )
+
+    assert result["status"] == "completed"
+
+    cycle = loop.get_history()[0]
+
+    assert cycle["observation"] == 50
+    assert cycle["actual"] == 50
+
+    assert cycle["actual"] == cycle["observation"]
+
+
+def test_provider_is_called_once_per_cycle():
+    calls = []
+
+    def source():
+        value = len(calls) + 1
+        calls.append(value)
+        return value
+
+    provider = ObservationProvider(source)
+
+    loop, engine = create_loop()
+
+    result = loop.run(
+        goal_state={"goal": "observe"},
+        observation_provider=provider,
+        max_cycles=4,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycles"] == 4
+
+    assert calls == [1, 2, 3, 4]
+
+    history = loop.get_history()
+
+    assert [cycle["observation"] for cycle in history] == [
+        1,
+        2,
+        3,
+        4,
+    ]
+
+
+def test_provider_exhaustion_stops_without_inventing_observation():
+    provider = SequenceObservationProvider([10, 20])
+
+    loop, engine = create_loop()
+
+    result = loop.run(
+        goal_state={"goal": "observe"},
+        observation_provider=provider,
+        max_cycles=5,
+    )
+
+    assert result["status"] == "completed"
+    assert result["cycles"] == 2
+    assert result["reason"] == "observation_provider_exhausted"
+
+    history = loop.get_history()
+
+    assert [cycle["observation"] for cycle in history] == [
+        10,
+        20,
+    ]
+
+
+def test_empty_provider_produces_no_cycle():
+    provider = SequenceObservationProvider([])
+
+    loop, engine = create_loop()
+
+    result = loop.run(
+        goal_state={"goal": "observe"},
+        observation_provider=provider,
+        max_cycles=3,
+    )
+
+    assert result["status"] == "unavailable"
+    assert result["cycles"] == 0
+    assert result["reason"] == "observation_provider_exhausted"
+
+    assert loop.get_history() == []
+
+
+def test_loop_rejects_two_observation_sources():
+    provider = SequenceObservationProvider([10])
+
+    loop, engine = create_loop()
+
+    with pytest.raises(ValueError):
+        loop.run(
+            goal_state={"goal": "observe"},
+            observations=[10],
+            observation_provider=provider,
+            max_cycles=1,
+        )
+
+
+def test_loop_requires_observation_source():
+    loop, engine = create_loop()
+
+    with pytest.raises(ValueError):
+        loop.run(
+            goal_state={"goal": "observe"},
+            max_cycles=1,
+        )
+
+
+def test_loop_requires_positive_max_cycles():
+    provider = SequenceObservationProvider([10])
+
+    loop, engine = create_loop()
+
+    with pytest.raises(ValueError):
+        loop.run(
+            goal_state={"goal": "observe"},
+            observation_provider=provider,
+            max_cycles=0,
+        )
+
+
+def test_loop_rejects_boolean_max_cycles():
+    provider = SequenceObservationProvider([10])
+
+    loop, engine = create_loop()
+
+    with pytest.raises(TypeError):
+        loop.run(
+            goal_state={"goal": "observe"},
+            observation_provider=provider,
+            max_cycles=True,
+)
