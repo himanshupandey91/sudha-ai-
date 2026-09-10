@@ -2,44 +2,55 @@ from core.adaptive_predictor import AdaptivePredictor
 from core.environment import Environment
 
 
-def test_action_environment_learning_loop():
+def test_action_effect_is_learned_from_actual_results():
     environment = Environment()
 
     predictor = AdaptivePredictor(
         learning_rate=0.5
     )
 
-    hypothesis = "temperature_after_increase"
+    hypothesis = "effect_of_increase_temperature"
 
     predictor.set_prediction(
         hypothesis=hypothesis,
-        prediction=20.0
+        prediction=0.0
     )
 
-    prediction = predictor.predict(hypothesis)
+    first_temperature = environment.get_state()["temperature"]
 
     result = environment.step("increase_temperature")
 
-    actual = result["actual"]
+    actual_first = result["actual"]
+    actual_effect = actual_first - first_temperature
 
-    error_before_learning = abs(actual - prediction)
+    prediction_before = predictor.predict(hypothesis)
+
+    error_before_learning = abs(
+        actual_effect - prediction_before
+    )
 
     predictor.update(
         hypothesis=hypothesis,
-        actual=actual
+        actual=actual_effect
     )
 
-    learned_prediction = predictor.predict(hypothesis)
+    learned_effect = predictor.predict(hypothesis)
+
+    second_temperature = environment.get_state()["temperature"]
 
     result = environment.step("increase_temperature")
 
-    actual_next = result["actual"]
+    actual_second = result["actual"]
+    actual_effect_next = actual_second - second_temperature
 
     error_after_learning = abs(
-        actual_next - learned_prediction
+        actual_effect_next - learned_effect
     )
 
-    assert actual == 21.0
-    assert actual_next == 22.0
+    assert actual_first == 21.0
+    assert actual_effect == 1.0
+
+    assert actual_second == 22.0
+    assert actual_effect_next == 1.0
 
     assert error_after_learning < error_before_learning
