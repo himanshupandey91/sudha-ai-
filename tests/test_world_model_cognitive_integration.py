@@ -2,8 +2,10 @@ from core.adaptive_predictor import AdaptivePredictor
 from core.closed_loop import ClosedLoopLearningEngine
 from core.cognitive_experiment import CognitiveExperimentEngine
 from core.environment import Environment
+from core.executive_reasoning import ExecutiveReasoningEngine
 from core.experiment_loop import ExperimentLoopEngine
 from core.experience_learning import ExperienceLearningEngine
+from core.hypothesis_planner import HypothesisPlanningEngine
 from core.prediction import PredictionEngine
 from core.world_model import WorldModel
 
@@ -35,15 +37,27 @@ def test_world_model_records_cognitive_experience():
         action="increase_temperature"
     )
 
+    hypothesis_planner = HypothesisPlanningEngine(
+        exploration=True
+    )
+
+    executive_reasoning = ExecutiveReasoningEngine(
+        exploration=True
+    )
+
     engine = CognitiveExperimentEngine(
+        hypothesis_planner=hypothesis_planner,
         experiment_loop=experiment_loop,
+        executive_reasoning=executive_reasoning,
         world_model=world_model
     )
 
     observation = environment.get_state()["temperature"]
 
     result = engine.run_cycle(
-        goal_state="reduce_prediction_error",
+        goal_state={
+            "goal": "reduce_prediction_error"
+        },
         observation=observation
     )
 
