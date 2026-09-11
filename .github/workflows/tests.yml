@@ -20,8 +20,8 @@ jobs:
       - name: Check CMake
         run: cmake --version
 
-      - name: Install pytest
-        run: pip install pytest
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
 
       - name: Build whisper.cpp
         run: bash scripts/build_whisper.sh
