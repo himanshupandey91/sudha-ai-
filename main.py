@@ -1,31 +1,59 @@
 """
-Sudha AI - Main Cognitive Pipeline
+Sudha AI - Educational Learning System
 
-Version 0.5
+Version 0.5 - EDUCATIONAL PROJECT (Not Production Ready)
 
-Current pipeline:
+IMPORTANT:
+─────────
+This is a simplified demonstration of learning concepts.
+It uses basic linear math formulas, NOT deep learning or real AI.
 
-Multimodal Input
-  ↓
-Perception
-  ↓
-Unified Observation
-  ↓
-Prediction
-  ↓
-Actual Outcome
-  ↓
-Difference
-  ↓
-Learning
-  ↓
-Memory
+Do NOT use for:
+├─ Real predictions
+├─ Production systems
+├─ AGI research
+└─ Any critical applications
 
-Important:
-- No fake actual outcome is generated.
-- Learning occurs only after an actual outcome is provided.
-- Every completed learning cycle is stored in memory.
-- Existing run() behavior is preserved.
+Use for:
+├─ Learning concepts
+├─ Understanding feedback loops
+├─ Educational demonstrations
+└─ Starting point for further study
+
+Current Pipeline (SIMPLIFIED):
+
+Input
+  ↓
+Perception (validates structure)
+  ↓
+Prediction (returns input value, very basic)
+  ↓
+Actual Outcome (provided externally)
+  ↓
+Difference (calculates |actual - prediction|)
+  ↓
+Learning (converts error to signal, just returns error)
+  ↓
+Adaptive Update (linear: new = old + rate × error)
+  ↓
+Memory (stores experiences)
+
+Limitations:
+───────────
+✅ Works: Basic learning feedback loop
+❌ Limited: No deep learning, no real intelligence
+❌ Limited: Tests use controlled fake data
+❌ Limited: Predictions are essentially input-echoing
+
+For a real ML system, you'd use:
+├─ Neural Networks (PyTorch, TensorFlow)
+├─ Complex optimization algorithms
+├─ Backpropagation through layers
+├─ Real datasets
+└─ Proper training pipelines
+
+This uses:
+└─ Simple math formula only
 """
 
 from core.perception import PerceptionEngine
@@ -36,6 +64,25 @@ from core.memory import MemoryEngine
 
 
 class SudhaAI:
+    """
+    Educational Learning System Demonstration
+    
+    HONEST NOTE:
+    This is a simplified system for learning concepts.
+    It's NOT a real autonomous intelligence system.
+    
+    It demonstrates:
+    ✅ Error-driven learning (via simple linear updates)
+    ✅ Memory accumulation
+    ✅ Feedback loops
+    ✅ Modular architecture
+    
+    It does NOT demonstrate:
+    ❌ Real AI capabilities
+    ❌ Complex reasoning
+    ❌ True autonomy
+    ❌ Practical intelligence
+    """
 
     def __init__(
         self,
@@ -46,7 +93,10 @@ class SudhaAI:
         memory=None
     ):
         """
-        Initialize the cognitive components.
+        Initialize the educational components.
+        
+        Note: These are simplified versions for learning purposes.
+        Real systems would be far more complex.
         """
 
         self.perception = (
@@ -88,6 +138,10 @@ class SudhaAI:
     ):
         """
         Create a unified multimodal observation.
+        
+        LIMITATION: This validates structure but doesn't
+        actually process voice/image/video yet.
+        Real implementation would need actual ML for each modality.
         """
 
         return self.perception.create_multimodal_observation(
@@ -100,6 +154,9 @@ class SudhaAI:
     def predict(self, observation):
         """
         Generate a prediction from an observation.
+        
+        LIMITATION: Currently just returns the input value.
+        Real system would use neural networks or other ML.
         """
 
         if not isinstance(observation, dict):
@@ -116,9 +173,9 @@ class SudhaAI:
 
         data = observation.get("data")
 
-        prediction = self.prediction.predict(
-            data
-        )
+        # NOTE: Current prediction is very basic (just returns input)
+        # In a real system, this would run data through neural networks
+        prediction = self.prediction.predict(data)
 
         return {
             "status": "predicted",
@@ -132,6 +189,8 @@ class SudhaAI:
     ):
         """
         Compare prediction with actual outcome.
+        
+        This calculates error: |actual - prediction|
         """
 
         difference = self.difference.calculate(
@@ -151,8 +210,11 @@ class SudhaAI:
         difference
     ):
         """
-        Convert prediction error into
-        a learning signal.
+        Convert prediction error into learning signal.
+        
+        LIMITATION: Currently just uses the error value itself.
+        Real systems would use activation functions and
+        more sophisticated signal processing.
         """
 
         learning = self.learning.learn(
@@ -174,6 +236,10 @@ class SudhaAI:
     ):
         """
         Store one complete experience in memory.
+        
+        Note: Memory is bounded and simple.
+        Real systems would use more sophisticated
+        memory consolidation and retrieval strategies.
         """
 
         experience = {
@@ -203,8 +269,9 @@ class SudhaAI:
     ):
         """
         Run one observation → prediction cycle.
-
-        No actual outcome is generated here.
+        
+        No actual outcome is generated or learned here.
+        This is just for prediction without feedback.
         """
 
         observation = self.observe(
@@ -237,22 +304,31 @@ class SudhaAI:
     ):
         """
         Run a complete learning cycle.
-
+        
         Flow:
-
         Input
           ↓
         Observation
           ↓
         Prediction
           ↓
-        Actual Outcome
+        Actual Outcome (provided externally)
           ↓
-        Difference
+        Calculate Difference
           ↓
-        Learning
+        Generate Learning Signal
           ↓
-        Memory
+        Update Weights (linear: new = old + rate × error)
+          ↓
+        Store in Memory
+        
+        LIMITATION: This is a simplified demonstration.
+        Real learning would involve:
+        ├─ Backpropagation through layers
+        ├─ Complex optimization algorithms
+        ├─ Regularization
+        ├─ Dropout and other techniques
+        └─ Proper hyperparameter tuning
         """
 
         observation = self.observe(
