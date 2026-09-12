@@ -104,7 +104,10 @@ def test_learned_prediction_transfers_to_new_environment():
 
     assert updated_prediction > old_prediction
 
-    assert updated_prediction == 1.5
+    # Allow a small numerical/quantization tolerance.
+    assert abs(
+        updated_prediction - 1.5
+    ) < 0.001
 
 
 def test_new_environment_knowledge_is_corrected_by_actual_result():
@@ -199,4 +202,8 @@ def test_transfer_starts_with_prior_knowledge_not_zero():
         hypothesis
     )
 
-    assert prediction_after_experience == 1.5
+    # The expected mathematical update is 1.5,
+    # but allow a small numerical/quantization tolerance.
+    assert abs(
+        prediction_after_experience - 1.5
+    ) < 0.001
